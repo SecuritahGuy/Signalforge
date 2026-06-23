@@ -1,12 +1,17 @@
+import numpy as np
 import pandas as pd
+import pytest
 
 from signalforge.paper import (
     ExitRulesConfig,
     PaperTradingConfig,
     RebalanceConfig,
     ScoreDeteriorationConfig,
+    SectorStopConfig,
     StopLossConfig,
+    TimeDecayConfig,
     TrailingStopConfig,
+    TrailingVolatilityStopConfig,
     build_planned_orders,
     mark_paper_positions,
     reconcile_exits,
@@ -561,3 +566,321 @@ def test_old_ledger_without_exit_columns_loads_successfully():
 
     assert "exit_reason" in reconciled.columns
     assert reconciled.loc[0, "exit_reason"] == "horizon"
+
+
+def _prices_from_closes(closes: list[float], start: str = "2023-11-20") -> pd.DataFrame:
+    """Build prices DataFrame from a list of close values."""
+    dates = pd.bdate_range(start, periods=len(closes))
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "symbol": "A",
+            "open": closes,
+            "high": closes,
+            "low": closes,
+            "close": closes,
+            "adj_close": closes,
+            "volume": 1_000_000,
+        }
+    )
+
+
+def test_trailing_volatility_stop_activation_and_exit():
+    """Trailing volatility stop activates after high return and exits on vol-based drawdown."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            trailing_volatility_stop=TrailingVolatilityStopConfig(
+                enabled=True,
+                activate_at_return=0.10,
+                volatility_lookback=3,
+                volatility_multiple=0.5,
+                tightest_trail_pct=-0.03,
+                widest_trail_pct=-0.05,
+            ),
+            trailing_stop=TrailingStopConfig(enabled=False),
+        ),
+    )
+    # 45 flat days at 100 for vol calc + lookback, then jump + drop
+    closes = [100.0] * 45 + [100, 115, 108]
+    prices = _prices_from_closes(closes)
+    exited = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices, config=config
+    )
+    assert exited.loc[0, "status"] == "closed"
+    assert exited.loc[0, "exit_reason"] == "trailing_volatility_stop"
+    assert exited.loc[0, "trailing_stop_activated"]
+
+
+def test_trailing_volatility_stop_holds_within_vol_based_threshold():
+    """Trailing volatility stop does not exit when drawdown is within vol-based threshold."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            trailing_volatility_stop=TrailingVolatilityStopConfig(
+                enabled=True,
+                activate_at_return=0.10,
+                volatility_lookback=3,
+                volatility_multiple=0.5,
+                tightest_trail_pct=-0.03,
+                widest_trail_pct=-0.05,
+            ),
+            trailing_stop=TrailingStopConfig(enabled=False),
+        ),
+    )
+    # Same flat base, jump to 115, but smaller drop (within trail)
+    closes = [100.0] * 45 + [100, 115, 113]
+    prices = _prices_from_closes(closes)
+    held = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices, config=config
+    )
+    assert held.loc[0, "status"] == "open"
+
+
+def test_trailing_volatility_stop_priority_over_horizon():
+    """Trailing volatility stop fires before horizon when both could apply."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            trailing_volatility_stop=TrailingVolatilityStopConfig(
+                enabled=True,
+                activate_at_return=0.05,
+                volatility_lookback=3,
+                volatility_multiple=0.5,
+                tightest_trail_pct=-0.03,
+                widest_trail_pct=-0.05,
+            ),
+            trailing_stop=TrailingStopConfig(enabled=False),
+        ),
+    )
+    # Jump high to activate, then drop to trigger
+    closes = [100.0] * 45 + [100, 130, 120]
+    prices = _prices_from_closes(closes)
+    exited = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices, config=config
+    )
+    assert exited.loc[0, "status"] == "closed"
+    assert exited.loc[0, "exit_reason"] == "trailing_volatility_stop"
+
+
+def test_time_decay_exit_triggers_after_max_hold():
+    """Time decay exit fires after days_held reaches max_hold computed from entry score."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        horizon=60,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            time_decay=TimeDecayConfig(
+                enabled=True,
+                half_life_days=10,
+                min_days_hold=2,
+                min_score_for_decay=0.005,
+            ),
+        ),
+    )
+    # entry_score=0.02 → max_hold = 10 * log2(0.02/0.005) = 20 business days
+    # Use 70 flat days: fill ~Jan 2, 20+ days later triggers time_decay
+    closes = [100.0] * 70
+    prices = _prices_from_closes(closes)
+    exited = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices, config=config
+    )
+    assert exited.loc[0, "status"] == "closed"
+    assert exited.loc[0, "exit_reason"] == "time_decay"
+    assert exited.loc[0, "exit_signal_value"] > 0
+
+
+def test_time_decay_does_not_exit_before_max_hold():
+    """Time decay does not fire when days_held is below max_hold."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        horizon=60,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            time_decay=TimeDecayConfig(
+                enabled=True,
+                half_life_days=10,
+                min_days_hold=2,
+                min_score_for_decay=0.005,
+            ),
+        ),
+    )
+    # Only 5 business days after fill → well below max_hold of 20
+    closes = [100.0] * 45 + [100] * 5
+    prices = _prices_from_closes(closes)
+    held = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices, config=config
+    )
+    assert held.loc[0, "status"] == "open"
+
+
+def test_time_decay_does_not_fire_when_disabled():
+    """Time decay does not fire when configured disabled."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        horizon=5,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            time_decay=TimeDecayConfig(enabled=False),
+        ),
+    )
+    closes = [100.0] * 70
+    prices = _prices_from_closes(closes)
+    result = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices, config=config
+    )
+    # Falls through to horizon (horizon=5, so ~5 business days)
+    assert result.loc[0, "status"] == "closed"
+    assert result.loc[0, "exit_reason"] == "horizon"
+
+
+def _sector_universe() -> pd.DataFrame:
+    return pd.DataFrame({
+        "symbol": ["A", "B", "C", "D"],
+        "sector": ["Tech", "Tech", "Tech", "Health"],
+    })
+
+
+def _sector_prices(drop_start: int) -> pd.DataFrame:
+    """Build flat then declining prices for 4 symbols to test sector-stop.
+
+    After ``drop_start``, Tech symbols (A, B, C) decline by ~5% each day
+    so the rolling sector return falls below -5%.  Symbol D (Health)
+    stays flat to test that only the relevant sector is affected.
+    """
+    dates = pd.date_range("2024-01-01", periods=drop_start + 6, freq="B")
+    rows = []
+    for sym in ["A", "B", "C", "D"]:
+        for i, d in enumerate(dates):
+            if sym == "D":
+                close = 100.0
+            elif i < drop_start:
+                close = 100.0
+            else:
+                close = 100.0 * (0.95 ** (i - drop_start + 1))
+            rows.append({
+                "date": d,
+                "symbol": sym,
+                "open": close, "high": close, "low": close,
+                "close": close, "adj_close": close,
+                "volume": 1_000_000,
+            })
+    return pd.DataFrame(rows)
+
+
+def test_sector_stop_triggers_on_sector_decline():
+    """Sector stop fires when the rolling mean sector return is below threshold."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        horizon=60,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            sector_stop=SectorStopConfig(
+                enabled=True,
+                sector_decline_pct=-0.05,
+                lookback_days=3,
+                min_sector_records=2,
+            ),
+        ),
+    )
+    universe = _sector_universe()
+    prices = _sector_prices(drop_start=45)
+    exited = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices,
+        config=config, universe=universe,
+    )
+    assert exited.loc[0, "status"] == "closed"
+    assert exited.loc[0, "exit_reason"] == "sector_stop"
+
+
+def test_sector_stop_holds_when_sector_stable():
+    """Sector stop does not fire when sector return is above threshold."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        horizon=60,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            sector_stop=SectorStopConfig(
+                enabled=True,
+                sector_decline_pct=-0.05,
+                lookback_days=3,
+                min_sector_records=2,
+            ),
+        ),
+    )
+    universe = _sector_universe()
+    # All prices flat (only 20 dates) → sector return ~0, above threshold
+    dates = pd.date_range("2024-01-01", periods=20, freq="B")
+    rows = []
+    for sym in ["A", "B", "C", "D"]:
+        for d in dates:
+            rows.append({
+                "date": d, "symbol": sym,
+                "open": 100.0, "high": 100.0, "low": 100.0,
+                "close": 100.0, "adj_close": 100.0, "volume": 1_000_000,
+            })
+    prices = pd.DataFrame(rows)
+    held = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices,
+        config=config, universe=universe,
+    )
+    assert held.loc[0, "status"] == "open"
+
+
+def test_sector_stop_does_not_fire_when_disabled():
+    """Sector stop does not fire when configured disabled."""
+    config = PaperTradingConfig(
+        initial_capital=2_000,
+        position_weight=0.10,
+        long_fraction=1.0,
+        min_score=0.0,
+        horizon=5,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+        exit_rules=ExitRulesConfig(
+            sector_stop=SectorStopConfig(enabled=False),
+        ),
+    )
+    universe = _sector_universe()
+    prices = _sector_prices(drop_start=45)
+    result = reconcile_exits(
+        _open_ledger(prices=prices, config=config), prices,
+        config=config, universe=universe,
+    )
+    # Falls through to horizon (horizon=5)
+    assert result.loc[0, "exit_reason"] == "horizon"

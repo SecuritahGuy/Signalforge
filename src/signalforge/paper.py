@@ -38,7 +38,7 @@ PAPER_LEDGER_COLUMNS = (
 )
 
 
-EXIT_RULE_VERSION = "exit_rules.v1"
+EXIT_RULE_VERSION = "exit_rules.v2"
 
 
 @dataclass(frozen=True)
@@ -70,10 +70,41 @@ class RebalanceConfig:
 
 
 @dataclass(frozen=True)
+class TrailingVolatilityStopConfig:
+    enabled: bool = False
+    activate_at_return: float = 0.12
+    volatility_lookback: int = 20
+    volatility_multiple: float = 2.0
+    tightest_trail_pct: float = -0.03
+    widest_trail_pct: float = -0.15
+
+
+@dataclass(frozen=True)
+class TimeDecayConfig:
+    enabled: bool = False
+    half_life_days: int = 10
+    min_days_hold: int = 2
+    min_score_for_decay: float = 0.005
+
+
+@dataclass(frozen=True)
+class SectorStopConfig:
+    enabled: bool = False
+    sector_decline_pct: float = -0.05
+    lookback_days: int = 5
+    min_sector_records: int = 3
+
+
+@dataclass(frozen=True)
 class ExitRulesConfig:
     horizon_days: int = 20
     stop_loss: StopLossConfig = field(default_factory=StopLossConfig)
     trailing_stop: TrailingStopConfig = field(default_factory=TrailingStopConfig)
+    trailing_volatility_stop: TrailingVolatilityStopConfig = field(
+        default_factory=TrailingVolatilityStopConfig
+    )
+    time_decay: TimeDecayConfig = field(default_factory=TimeDecayConfig)
+    sector_stop: SectorStopConfig = field(default_factory=SectorStopConfig)
     score_deterioration: ScoreDeteriorationConfig = field(
         default_factory=ScoreDeteriorationConfig
     )
@@ -238,6 +269,7 @@ def reconcile_exits(
     *,
     scores: pd.DataFrame | None = None,
     config: PaperTradingConfig | None = None,
+    universe: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Close open paper positions when the first configured exit rule triggers."""
     cfg = config or PaperTradingConfig()
@@ -245,12 +277,32 @@ def reconcile_exits(
     output = _normalize_ledger(ledger)
     price_lookup = _price_lookup(prices)
     score_lookup = _score_lookup(scores)
+    vol_lookup = (
+        _volatility_lookup(
+            prices,
+            lookback=cfg.exit_rules.trailing_volatility_stop.volatility_lookback,
+        )
+        if cfg.exit_rules.trailing_volatility_stop.enabled
+        else {}
+    )
+    sector_lookup = (
+        _sector_lookup(
+            prices,
+            universe,
+            lookback=cfg.exit_rules.sector_stop.lookback_days,
+            min_records=cfg.exit_rules.sector_stop.min_sector_records,
+        )
+        if cfg.exit_rules.sector_stop.enabled and universe is not None
+        else {}
+    )
 
     for index, row in output.loc[output["status"] == "open"].iterrows():
         decision = _first_exit_decision(
             row,
             price_lookup,
             score_lookup,
+            vol_lookup=vol_lookup,
+            sector_lookup=sector_lookup,
             config=cfg,
         )
         if decision is None:
@@ -672,6 +724,83 @@ def _price_lookup(prices: pd.DataFrame) -> dict[tuple[str, pd.Timestamp], pd.Ser
     }
 
 
+def _volatility_lookup(
+    prices: pd.DataFrame, *, lookback: int = 20
+) -> dict[tuple[str, pd.Timestamp], float]:
+    """Precompute rolling annualised volatility (adj_close) per symbol per date."""
+    required = {"date", "symbol", "adj_close"}
+    missing = required.difference(prices.columns)
+    if missing:
+        raise KeyError(f"prices are missing required columns: {sorted(missing)}")
+    frame = prices.copy()
+    frame["date"] = pd.to_datetime(frame["date"])
+    frame["symbol"] = frame["symbol"].str.upper()
+    frame = frame.sort_values(["symbol", "date"])
+    frame["daily_return"] = frame.groupby("symbol")["adj_close"].pct_change()
+    vol = (
+        frame.groupby("symbol")["daily_return"]
+        .transform(lambda s: s.rolling(lookback, min_periods=lookback).std(ddof=1))
+    )
+    frame["volatility"] = vol
+    return {
+        (row["symbol"], row["date"]): row["volatility"]
+        for _, row in frame.iterrows()
+        if pd.notna(row["volatility"])
+    }
+
+
+def _sector_lookup(
+    prices: pd.DataFrame,
+    universe: pd.DataFrame,
+    *,
+    lookback: int = 5,
+    min_records: int = 3,
+    date_col: str = "date",
+    symbol_col: str = "symbol",
+    sector_col: str = "sector",
+    price_col: str = "adj_close",
+) -> dict[tuple[str, pd.Timestamp], float]:
+    """Precompute rolling mean sector return for each (sector, date).
+
+    Only sectors with at least ``min_records`` distinct symbols on a
+    given date contribute to the lookup.
+    """
+    required_prices = {date_col, symbol_col, price_col}
+    missing = required_prices.difference(prices.columns)
+    if missing:
+        raise KeyError(f"prices are missing required columns: {sorted(missing)}")
+    required_universe = {symbol_col, sector_col}
+    missing = required_universe.difference(universe.columns)
+    if missing:
+        raise KeyError(f"universe is missing required columns: {sorted(missing)}")
+
+    frame = prices.copy()
+    frame[date_col] = pd.to_datetime(frame[date_col])
+    frame[symbol_col] = frame[symbol_col].str.upper()
+    univ = universe.copy()
+    univ[symbol_col] = univ[symbol_col].str.upper()
+    frame = frame.merge(univ[[symbol_col, sector_col]], on=symbol_col, how="inner")
+    frame = frame.sort_values([symbol_col, date_col])
+    frame["daily_return"] = frame.groupby(symbol_col)[price_col].pct_change()
+
+    date_sector_counts = frame.groupby([date_col, sector_col])[symbol_col].nunique()
+    valid_pairs = date_sector_counts[date_sector_counts >= min_records].reset_index()
+    valid_pairs = valid_pairs[[date_col, sector_col]]
+    frame = frame.merge(valid_pairs, on=[date_col, sector_col], how="inner")
+
+    sector_daily = frame.groupby([date_col, sector_col])["daily_return"].mean().reset_index()
+    sector_daily = sector_daily.sort_values([sector_col, date_col])
+    sector_daily["sector_return"] = sector_daily.groupby(sector_col)[
+        "daily_return"
+    ].transform(lambda s: s.rolling(lookback, min_periods=lookback).mean())
+
+    return {
+        (row[sector_col], row[date_col]): row["sector_return"]
+        for _, row in sector_daily.iterrows()
+        if pd.notna(row["sector_return"])
+    }
+
+
 def _next_available_date(
     price_lookup: dict[tuple[str, pd.Timestamp], pd.Series],
     symbol: str,
@@ -712,6 +841,8 @@ def _first_exit_decision(
     price_lookup: dict[tuple[str, pd.Timestamp], pd.Series],
     score_lookup: dict[tuple[str, pd.Timestamp], float],
     *,
+    vol_lookup: dict[tuple[str, pd.Timestamp], float] | None = None,
+    sector_lookup: dict[tuple[str, pd.Timestamp], float] | None = None,
     config: PaperTradingConfig,
 ) -> dict | None:
     if pd.isna(row["fill_date"]):
@@ -744,12 +875,27 @@ def _first_exit_decision(
             if row["entry_price"]
             else 0.0
         )
-        if (
-            config.exit_rules.trailing_stop.enabled
-            and high_return >= config.exit_rules.trailing_stop.activate_at_return
-        ):
-            trailing_active = True
+        ts = config.exit_rules.trailing_stop
+        tvs = config.exit_rules.trailing_volatility_stop
+        if tvs.enabled or ts.enabled:
+            activate_at = (
+                tvs.activate_at_return if tvs.enabled
+                else ts.activate_at_return
+            )
+            if high_return >= activate_at:
+                trailing_active = True
 
+        vol = (
+            vol_lookup.get((symbol, date), np.nan)
+            if vol_lookup
+            else np.nan
+        )
+        sector = str(row.get("sector", ""))
+        sector_return = (
+            sector_lookup.get((sector, date), np.nan)
+            if sector_lookup and sector
+            else np.nan
+        )
         decision = _exit_decision_for_date(
             row,
             date,
@@ -758,6 +904,8 @@ def _first_exit_decision(
             highest_close=highest_close,
             trailing_active=trailing_active,
             current_score=_score_on_or_before(score_lookup, symbol, date),
+            current_vol=vol,
+            current_sector_return=sector_return,
             config=config,
         )
         if decision is not None:
@@ -774,6 +922,8 @@ def _exit_decision_for_date(
     highest_close: float,
     trailing_active: bool,
     current_score: float,
+    current_vol: float = np.nan,
+    current_sector_return: float = np.nan,
     config: PaperTradingConfig,
 ) -> dict | None:
     base = {
@@ -796,6 +946,28 @@ def _exit_decision_for_date(
                 **base,
                 "exit_reason": "trailing_stop",
                 "exit_signal_value": drawdown_from_high,
+            }
+
+    vol_rule = config.exit_rules.trailing_volatility_stop
+    if vol_rule.enabled and trailing_active and pd.notna(current_vol):
+        raw = -(current_vol * vol_rule.volatility_multiple)
+        trail_pct = min(raw, vol_rule.tightest_trail_pct)
+        trail_pct = max(trail_pct, vol_rule.widest_trail_pct)
+        drawdown_from_high = current_close / highest_close - 1.0 if highest_close else 0.0
+        if drawdown_from_high <= trail_pct:
+            return {
+                **base,
+                "exit_reason": "trailing_volatility_stop",
+                "exit_signal_value": drawdown_from_high,
+            }
+
+    sector_rule = config.exit_rules.sector_stop
+    if sector_rule.enabled and pd.notna(current_sector_return):
+        if current_sector_return <= sector_rule.sector_decline_pct:
+            return {
+                **base,
+                "exit_reason": "sector_stop",
+                "exit_signal_value": current_sector_return,
             }
 
     score_rule = config.exit_rules.score_deterioration
@@ -829,6 +1001,22 @@ def _exit_decision_for_date(
                 "exit_signal_value": current_score,
             }
 
+    decay_rule = config.exit_rules.time_decay
+    if decay_rule.enabled and days_held >= decay_rule.min_days_hold:
+        entry_score = float(row["score"])
+        if entry_score > 0:
+            max_hold = int(
+                decay_rule.half_life_days
+                * (np.log(entry_score / decay_rule.min_score_for_decay) / np.log(2))
+            )
+            if days_held >= max_hold:
+                remaining = 0.5 ** (days_held / decay_rule.half_life_days)
+                return {
+                    **base,
+                    "exit_reason": "time_decay",
+                    "exit_signal_value": remaining,
+                }
+
     if date >= pd.Timestamp(row["target_exit_date"]):
         return {**base, "exit_reason": "horizon", "exit_signal_value": current_return}
     return None
@@ -856,13 +1044,16 @@ def _open_position_state(
         if row["entry_price"]
         else 0.0
     )
-    trailing_active = (
-        bool(row["trailing_stop_activated"])
-        or (
-            config.exit_rules.trailing_stop.enabled
-            and high_return >= config.exit_rules.trailing_stop.activate_at_return
-        )
-    )
+    trailing_active = bool(row["trailing_stop_activated"])
+    if not trailing_active:
+        if config.exit_rules.trailing_volatility_stop.enabled:
+            activate_at = config.exit_rules.trailing_volatility_stop.activate_at_return
+        elif config.exit_rules.trailing_stop.enabled:
+            activate_at = config.exit_rules.trailing_stop.activate_at_return
+        else:
+            activate_at = None
+        if activate_at is not None and high_return >= activate_at:
+            trailing_active = True
     return {
         "highest_close_since_entry": highest_close,
         "trailing_stop_activated": trailing_active,

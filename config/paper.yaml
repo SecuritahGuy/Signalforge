@@ -10,6 +10,26 @@ exit_rules:
     activate_at_return: 0.12
     trail_from_high_pct: -0.06
 
+  trailing_volatility_stop:
+    enabled: false
+    activate_at_return: 0.12
+    volatility_lookback: 20
+    volatility_multiple: 2.0
+    tightest_trail_pct: -0.03
+    widest_trail_pct: -0.15
+
+  time_decay:
+    enabled: false
+    half_life_days: 10
+    min_days_hold: 2
+    min_score_for_decay: 0.005
+
+  sector_stop:
+    enabled: false
+    sector_decline_pct: -0.05
+    lookback_days: 5
+    min_sector_records: 3
+
   score_deterioration:
     enabled: true
     min_days_held: 5

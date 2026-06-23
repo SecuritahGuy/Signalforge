@@ -16,21 +16,23 @@
 - [x] Web dashboard (React/TypeScript) with 12 views
 - [x] 30+ CLI scripts and 30 test files
 
-## Phase 1 — Close the gaps (next)
+## Phase 1 — Close the gaps
 
-- [ ] **Implement rebalance exit rule** — the only explicit `# Placeholder` in the codebase (`paper.py:813`). Portfolio-level risk-weighted exits to complement per-position rules.
-- [ ] **Wire up LightGBM and XGBoost** — optional deps exist in `pyproject.toml` but neither is integrated into `modeling.py`.
-- [ ] **Add risk-parity and volatility-target position sizing** — currently only `equal_weight` is supported in `portfolio_backtest.py`.
+- [x] **Implement rebalance exit rule** — replaces the prior placeholder in `paper.py`.
+- [x] **Wire up LightGBM and XGBoost** — optional deps in `pyproject.toml`, integrated into `modeling.py` with try/except.
+- [x] **Add risk-parity and volatility-target position sizing** — inverse-volatility sizing in `portfolio_backtest.py`.
 - [ ] **Make YAML configs authoritative or remove them** — `config/research.yaml` is never loaded at runtime, creating a documentation/code drift risk.
-- [ ] **Set up CI (GitHub Actions)** — run tests and lint on every push.
-- [ ] **Initial git commit** — baseline the project.
+- [x] **Set up CI (GitHub Actions)** — runs tests on every push.
+- [x] **Initial git commit** — baselines the project.
 
 ## Phase 2 — Hardening
 
-- [ ] **Persistent metadata store** — migrate paper ledger and run history from CSV to SQLite for queryability and integrity.
-- [ ] **Add more exit rule variants** — trailing volatility stop, time-based decay, sector-stop.
-- [ ] **Model ensemble and stacking** — combine Ridge/ElasticNet/RF/LGBM/XGBoost into blended predictions.
-- [ ] **Multi-timeframe features** — add weekly/monthly rolling windows beyond the current 5/20/60.
+- [x] **Persistent metadata store** — SQLite paper ledger, run history, account snapshots in `db.py`.
+- [x] **Trailing Volatility Stop** — adaptive stop distance based on rolling daily volatility, clamped by tightest/widest bounds.
+- [x] **Time-based Decay** — exits when `days_held >= half_life_days * log2(entry_score / min_score_for_decay)`; higher-conviction entries get longer runway.
+- [ ] **Add more exit rule variants** — sector-stop.
+- [x] **Model ensemble and stacking** — average/weighted/meta blending in `ensemble.py` with walk-forward.
+- [x] **Multi-timeframe features** — extended windows (5, 10, 20, 40, 60, 120) for returns/vol/momentum; SMA (10, 50, 200); range (10, 60, 120); volume/dollar-volume at (10, 40, 120); beta/corr at 60d/120d; all sector/market relatives extended; configurable via function params.
 - [ ] **Feature importance monitoring** — drift detection for feature distributions and model SHAP values over time.
 - [ ] **Dashboard auth and multi-session** — if the web UI moves beyond localhost.
 

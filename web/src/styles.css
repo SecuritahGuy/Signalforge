@@ -141,8 +141,14 @@ button {
   height: 9px;
   margin-top: 3px;
   border-radius: 999px;
+}
+.status-dot.online {
   background: var(--green);
   box-shadow: 0 0 0 4px var(--green-soft);
+}
+.status-dot.offline {
+  background: var(--amber);
+  box-shadow: 0 0 0 4px var(--amber-soft);
 }
 
 .workspace {

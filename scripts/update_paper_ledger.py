@@ -12,8 +12,11 @@ from signalforge.paper import (
     PaperTradingConfig,
     RebalanceConfig,
     ScoreDeteriorationConfig,
+    SectorStopConfig,
     StopLossConfig,
+    TimeDecayConfig,
     TrailingStopConfig,
+    TrailingVolatilityStopConfig,
     build_planned_orders,
     reconcile_exits,
     reconcile_fills,
@@ -164,6 +167,60 @@ def _load_exit_rules_config(path: str | None, *, horizon_days: int) -> ExitRules
             min_days_held=int(data.get("rebalance", {}).get("min_days_held", 10)),
             exit_below_score=float(
                 data.get("rebalance", {}).get("exit_below_score", 0.01)
+            ),
+        ),
+        trailing_volatility_stop=TrailingVolatilityStopConfig(
+            enabled=bool(
+                data.get("trailing_volatility_stop", {}).get("enabled", False)
+            ),
+            activate_at_return=float(
+                data.get("trailing_volatility_stop", {}).get(
+                    "activate_at_return", 0.12
+                )
+            ),
+            volatility_lookback=int(
+                data.get("trailing_volatility_stop", {}).get(
+                    "volatility_lookback", 20
+                )
+            ),
+            volatility_multiple=float(
+                data.get("trailing_volatility_stop", {}).get(
+                    "volatility_multiple", 2.0
+                )
+            ),
+            tightest_trail_pct=float(
+                data.get("trailing_volatility_stop", {}).get(
+                    "tightest_trail_pct", -0.03
+                )
+            ),
+            widest_trail_pct=float(
+                data.get("trailing_volatility_stop", {}).get(
+                    "widest_trail_pct", -0.15
+                )
+            ),
+        ),
+        time_decay=TimeDecayConfig(
+            enabled=bool(data.get("time_decay", {}).get("enabled", False)),
+            half_life_days=int(
+                data.get("time_decay", {}).get("half_life_days", 10)
+            ),
+            min_days_hold=int(
+                data.get("time_decay", {}).get("min_days_hold", 2)
+            ),
+            min_score_for_decay=float(
+                data.get("time_decay", {}).get("min_score_for_decay", 0.005)
+            ),
+        ),
+        sector_stop=SectorStopConfig(
+            enabled=bool(data.get("sector_stop", {}).get("enabled", False)),
+            sector_decline_pct=float(
+                data.get("sector_stop", {}).get("sector_decline_pct", -0.05)
+            ),
+            lookback_days=int(
+                data.get("sector_stop", {}).get("lookback_days", 5)
+            ),
+            min_sector_records=int(
+                data.get("sector_stop", {}).get("min_sector_records", 3)
             ),
         ),
     )

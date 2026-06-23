@@ -2,6 +2,7 @@
   "scripts": {
     "dashboard": "npm --prefix web run dev -- --host 127.0.0.1",
     "dashboard:sync": "node web/scripts/sync-data.mjs",
-    "dashboard:build": "npm --prefix web run build"
+    "dashboard:build": "npm --prefix web run build",
+    "server": ".venv/bin/python -m signalforge.server.app"
   }
 }

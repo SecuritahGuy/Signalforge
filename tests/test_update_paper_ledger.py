@@ -77,6 +77,11 @@ def test_load_exit_rules_config_parses_nested_rules(tmp_path):
                 "    exit_if_score_declines_pct: 0.50",
                 "  rebalance:",
                 "    enabled: false",
+                "  time_decay:",
+                "    enabled: true",
+                "    half_life_days: 15",
+                "    min_days_hold: 3",
+                "    min_score_for_decay: 0.003",
             ]
         )
     )
@@ -94,3 +99,7 @@ def test_load_exit_rules_config_parses_nested_rules(tmp_path):
     assert config.score_deterioration.exit_below_score == 0.004
     assert config.score_deterioration.exit_if_score_declines_pct == 0.50
     assert config.rebalance.enabled is False
+    assert config.time_decay.enabled is True
+    assert config.time_decay.half_life_days == 15
+    assert config.time_decay.min_days_hold == 3
+    assert config.time_decay.min_score_for_decay == 0.003
