@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - ROADMAP.md with phased plan (foundation, gaps, hardening, research depth, live-adjacent)
+- SQLite metadata store (`src/signalforge/db.py`) with paper ledger, run history, and account snapshots
+- `scripts/migrate_to_db.py` — one-time migration from CSV artifacts to SQLite
 - CHANGELOG.md
 - model_type support for `lgbm` and `xgboost` in modeling pipeline
 - Rebalance exit rule in paper.py (replaces prior placeholder)
