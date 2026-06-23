@@ -24,14 +24,33 @@ def build_research_frame(
     benchmark_symbol: str = "SPY",
     horizon: int = 5,
     horizons: tuple[int, ...] | None = None,
+    lagged_features: bool = False,
+    calendar_features: bool = False,
+    cross_sectional_features: bool = False,
+    technical_indicators: bool = False,
+    interaction_features: bool = False,
+    factor_proxies: bool = False,
 ) -> pd.DataFrame:
-    """Create the first model-ready frame from normalized prices and universe data."""
+    """Create the first model-ready frame from normalized prices and universe data.
+
+    Parameters passed through to ``build_price_features``:
+    lagged_features, calendar_features, cross_sectional_features, technical_indicators,
+    interaction_features, factor_proxies.
+    """
     label_horizons = horizons or (horizon,)
     tradable_prices, benchmark_prices = split_benchmark_prices(
         prices,
         benchmark_symbol=benchmark_symbol,
     )
-    features = build_price_features(tradable_prices)
+    features = build_price_features(
+        tradable_prices,
+        lagged_features=lagged_features,
+        calendar_features=calendar_features,
+        cross_sectional_features=cross_sectional_features,
+        technical_indicators=technical_indicators,
+        interaction_features=interaction_features,
+        factor_proxies=factor_proxies,
+    )
     features = add_sector_relative_features(features, universe)
     features = add_market_relative_features(features, benchmark_prices)
     for label_horizon in label_horizons:

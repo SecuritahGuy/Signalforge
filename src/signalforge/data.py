@@ -4,12 +4,18 @@ from pathlib import Path
 
 import pandas as pd
 
+from signalforge.exceptions import DataError
+from signalforge.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 PRICE_COLUMNS = ("date", "symbol", "open", "high", "low", "close", "adj_close", "volume")
 UNIVERSE_COLUMNS = ("symbol", "name", "category", "sector", "industry")
 
 
 def load_price_csv(path: str | Path) -> pd.DataFrame:
     """Load normalized daily OHLCV data from CSV."""
+    logger.info("loading prices from %s", path)
     frame = pd.read_csv(path)
     validate_price_frame(frame)
     frame = frame.loc[:, PRICE_COLUMNS].copy()
@@ -17,17 +23,21 @@ def load_price_csv(path: str | Path) -> pd.DataFrame:
     frame["symbol"] = frame["symbol"].str.upper()
     numeric_columns = ["open", "high", "low", "close", "adj_close", "volume"]
     frame[numeric_columns] = frame[numeric_columns].apply(pd.to_numeric, errors="raise")
-    return frame.sort_values(["symbol", "date"]).reset_index(drop=True)
+    result = frame.sort_values(["symbol", "date"]).reset_index(drop=True)
+    logger.info("loaded %d rows, %d symbols", len(result), result["symbol"].nunique())
+    return result
 
 
 def load_universe_csv(path: str | Path) -> pd.DataFrame:
     """Load the research universe definition from CSV."""
+    logger.info("loading universe from %s", path)
     frame = pd.read_csv(path)
     missing = set(UNIVERSE_COLUMNS).difference(frame.columns)
     if missing:
-        raise KeyError(f"universe is missing required columns: {sorted(missing)}")
+        raise DataError(f"universe is missing required columns: {sorted(missing)}")
     frame = frame.copy()
     frame["symbol"] = frame["symbol"].str.upper()
+    logger.info("loaded %d universe entries", len(frame))
     return frame
 
 
@@ -41,14 +51,18 @@ def split_benchmark_prices(
     validate_price_frame(prices)
     benchmark = prices.loc[prices["symbol"].str.upper() == benchmark_symbol].copy()
     if benchmark.empty:
-        raise ValueError(f"benchmark symbol {benchmark_symbol!r} not found in prices")
+        raise DataError(f"benchmark symbol {benchmark_symbol!r} not found in prices")
     tradable = prices.loc[prices["symbol"].str.upper() != benchmark_symbol].copy()
+    logger.debug(
+        "split %d total symbols: %d tradable, 1 benchmark",
+        prices["symbol"].nunique(), tradable["symbol"].nunique(),
+    )
     return tradable.reset_index(drop=True), benchmark.reset_index(drop=True)
 
 
 def validate_price_frame(frame: pd.DataFrame) -> None:
     missing = set(PRICE_COLUMNS).difference(frame.columns)
     if missing:
-        raise KeyError(f"prices are missing required columns: {sorted(missing)}")
+        raise DataError(f"prices are missing required columns: {sorted(missing)}")
     if frame[list(PRICE_COLUMNS)].isna().any().any():
-        raise ValueError("prices contain null values in required columns")
+        raise DataError("prices contain null values in required columns")

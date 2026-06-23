@@ -10,6 +10,11 @@ from sklearn.linear_model import ElasticNet, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from signalforge.exceptions import ModelError
+from signalforge.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 try:
     import lightgbm as lgb
 
@@ -44,6 +49,22 @@ DEFAULT_FEATURE_COLUMNS = (
     "avg_dollar_volume_20d",
     "sector_rank_momentum_20d",
     "sector_rank_volatility_20d",
+    # New expanded features
+    "return_20d_lag_1",
+    "volatility_20d_lag_1",
+    "rsi_14",
+    "macd_histogram_12_26_9",
+    "bollinger_pct_b_20_2",
+    "atr_14",
+    "day_of_week_sin",
+    "day_of_week_cos",
+    "month_sin",
+    "month_cos",
+    "zscore_return_20d",
+    "zscore_volatility_20d",
+    "return_20d_x_volatility_20d",
+    "momentum_factor",
+    "low_vol_factor",
 )
 
 
@@ -61,6 +82,7 @@ class BaselineModelConfig:
         "ridge", "elasticnet", "random_forest", "lgbm", "xgboost"
     ] = "ridge"
     alpha: float = 1.0
+    l1_ratio: float = 0.25
     n_estimators: int = 600
     max_depth: int | None = 6
     min_samples_leaf: int = 25
@@ -85,14 +107,19 @@ def train_baseline_walkforward(
     cfg = config or BaselineModelConfig()
     missing = _required_columns(feature_columns, cfg).difference(research_frame.columns)
     if missing:
-        raise KeyError(f"research_frame is missing required columns: {sorted(missing)}")
+        raise ModelError(f"research_frame is missing required columns: {sorted(missing)}")
 
     frame = research_frame.copy()
     frame["date"] = pd.to_datetime(frame["date"])
     frame = frame.dropna(subset=[*feature_columns, cfg.target_col, cfg.realized_return_col])
     frame = frame.sort_values(["date", "symbol"]).reset_index(drop=True)
     if frame.empty:
-        raise ValueError("no model-ready rows remain after dropping null features and targets")
+        raise ModelError("no model-ready rows remain after dropping null features and targets")
+
+    logger.info(
+        "walkforward training: model=%s, %d features, %d rows, %d symbols",
+        cfg.model_type, len(feature_columns), len(frame), frame["symbol"].nunique(),
+    )
 
     prediction_frames = []
     summary_rows = []
@@ -168,10 +195,15 @@ def train_baseline_walkforward(
         )
 
     if not prediction_frames:
-        raise ValueError("walk-forward configuration produced no usable validation splits")
+        raise ModelError("walk-forward configuration produced no usable validation splits")
 
     all_predictions = pd.concat(prediction_frames, ignore_index=True)
     summary = pd.DataFrame(summary_rows)
+    logger.info(
+        "walkforward complete: %d splits, %d predictions, mean sharpe=%.3f",
+        len(summary), len(all_predictions),
+        summary["backtest_sharpe"].mean() if "backtest_sharpe" in summary.columns else float("nan"),
+    )
     feature_importance = _aggregate_feature_importance(importance_frames)
     metadata = {
         "config": asdict(cfg),
@@ -190,7 +222,7 @@ def _build_model(config: BaselineModelConfig) -> Pipeline:
     if config.model_type == "ridge":
         estimator = Ridge(alpha=config.alpha)
     elif config.model_type == "elasticnet":
-        estimator = ElasticNet(alpha=config.alpha, l1_ratio=0.25, max_iter=10_000)
+        estimator = ElasticNet(alpha=config.alpha, l1_ratio=config.l1_ratio, max_iter=10_000)
     elif config.model_type == "random_forest":
         estimator = RandomForestRegressor(
             n_estimators=config.n_estimators,
@@ -233,7 +265,7 @@ def _build_model(config: BaselineModelConfig) -> Pipeline:
             verbosity=0,
         )
     else:
-        raise ValueError(f"unsupported model_type: {config.model_type}")
+        raise ModelError(f"unsupported model_type: {config.model_type}")
 
     steps = [("imputer", SimpleImputer(strategy="median"))]
     if config.model_type in {"ridge", "elasticnet"}:

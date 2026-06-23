@@ -19,81 +19,82 @@ from signalforge.backtest import (
     apply_risk_controls,
     long_short_daily_returns,
 )
+from signalforge.exceptions import BacktestError
 
 
 # ── Config validation ──────────────────────────────────────────────
 
 class TestValidateConfig:
     def test_invalid_long_fraction_zero(self):
-        with pytest.raises(ValueError, match="long_fraction"):
+        with pytest.raises(BacktestError, match="long_fraction"):
             _validate_config(BacktestConfig(long_fraction=0))
 
     def test_invalid_long_fraction_above_one(self):
-        with pytest.raises(ValueError, match="long_fraction"):
+        with pytest.raises(BacktestError, match="long_fraction"):
             _validate_config(BacktestConfig(long_fraction=1.5))
 
     def test_invalid_short_fraction_zero(self):
-        with pytest.raises(ValueError, match="short_fraction"):
+        with pytest.raises(BacktestError, match="short_fraction"):
             _validate_config(BacktestConfig(short_fraction=0))
 
     def test_invalid_max_position_weight_zero(self):
-        with pytest.raises(ValueError, match="max_position_weight"):
+        with pytest.raises(BacktestError, match="max_position_weight"):
             _validate_config(BacktestConfig(max_position_weight=0))
 
     def test_negative_costs(self):
-        with pytest.raises(ValueError, match="costs"):
+        with pytest.raises(BacktestError, match="costs"):
             _validate_config(BacktestConfig(transaction_cost_bps=-1))
 
     def test_negative_slippage(self):
-        with pytest.raises(ValueError, match="costs"):
+        with pytest.raises(BacktestError, match="costs"):
             _validate_config(BacktestConfig(slippage_bps=-1))
 
     def test_target_volatility_zero(self):
-        with pytest.raises(ValueError, match="target_volatility"):
+        with pytest.raises(BacktestError, match="target_volatility"):
             _validate_config(BacktestConfig(target_volatility=0))
 
     def test_volatility_lookback_too_small(self):
-        with pytest.raises(ValueError, match="volatility_lookback"):
+        with pytest.raises(BacktestError, match="volatility_lookback"):
             _validate_config(BacktestConfig(volatility_lookback=1))
 
     def test_max_leverage_zero(self):
-        with pytest.raises(ValueError, match="max_leverage"):
+        with pytest.raises(BacktestError, match="max_leverage"):
             _validate_config(BacktestConfig(max_leverage=0))
 
     def test_max_drawdown_stop_too_large(self):
-        with pytest.raises(ValueError, match="max_drawdown_stop"):
+        with pytest.raises(BacktestError, match="max_drawdown_stop"):
             _validate_config(BacktestConfig(max_drawdown_stop=1.0))
 
     def test_max_drawdown_stop_zero(self):
-        with pytest.raises(ValueError, match="max_drawdown_stop"):
+        with pytest.raises(BacktestError, match="max_drawdown_stop"):
             _validate_config(BacktestConfig(max_drawdown_stop=0.0))
 
     def test_negative_cooldown_days(self):
-        with pytest.raises(ValueError, match="cooldown_days"):
+        with pytest.raises(BacktestError, match="cooldown_days"):
             _validate_config(BacktestConfig(cooldown_days=-1))
 
     def test_max_symbol_trades_zero(self):
-        with pytest.raises(ValueError, match="max_symbol_trades must be positive"):
+        with pytest.raises(BacktestError, match="max_symbol_trades must be positive"):
             _validate_config(BacktestConfig(max_symbol_trades=0))
 
     def test_initial_capital_zero(self):
-        with pytest.raises(ValueError, match="initial_capital must be positive"):
+        with pytest.raises(BacktestError, match="initial_capital must be positive"):
             _validate_config(BacktestConfig(initial_capital=0))
 
     def test_negative_min_trade_dollars(self):
-        with pytest.raises(ValueError, match="min_trade_dollars"):
+        with pytest.raises(BacktestError, match="min_trade_dollars"):
             _validate_config(BacktestConfig(min_trade_dollars=-1))
 
     def test_min_score_non_finite(self):
-        with pytest.raises(ValueError, match="min_score must be finite"):
+        with pytest.raises(BacktestError, match="min_score must be finite"):
             _validate_config(BacktestConfig(min_score=np.nan))
 
     def test_rebalance_interval_zero(self):
-        with pytest.raises(ValueError, match="rebalance_interval_days"):
+        with pytest.raises(BacktestError, match="rebalance_interval_days"):
             _validate_config(BacktestConfig(rebalance_interval_days=0))
 
     def test_max_adv_fraction_zero(self):
-        with pytest.raises(ValueError, match="max_adv_fraction must be positive"):
+        with pytest.raises(BacktestError, match="max_adv_fraction must be positive"):
             _validate_config(BacktestConfig(max_adv_fraction=0))
 
     def test_valid_config_passes(self):
@@ -353,7 +354,7 @@ class TestBacktestConfig:
 
 class TestLongShortDailyReturns:
     def test_missing_required_column(self):
-        with pytest.raises(KeyError, match="scored_returns is missing"):
+        with pytest.raises(BacktestError, match="scored_returns is missing"):
             long_short_daily_returns(pd.DataFrame({"date": [1]}))
 
     def test_empty_after_dropna(self):
@@ -363,7 +364,7 @@ class TestLongShortDailyReturns:
             "score": [np.nan],
             "forward_return": [np.nan],
         })
-        with pytest.raises(KeyError):
+        with pytest.raises(BacktestError):
             long_short_daily_returns(scored)
 
     def test_single_symbol_daily(self):
@@ -405,7 +406,7 @@ class TestLongShortDailyReturns:
 
 class TestApplyRiskControls:
     def test_missing_return_column(self):
-        with pytest.raises(KeyError, match="daily_returns is missing"):
+        with pytest.raises(BacktestError, match="daily_returns is missing"):
             apply_risk_controls(pd.DataFrame({"foo": [1]}))
 
     def test_no_vol_target_no_drawdown_stop(self):

@@ -11,6 +11,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from signalforge.backtest import BacktestConfig, long_short_daily_returns
+from signalforge.exceptions import ModelError
+from signalforge.logging_config import get_logger
 from signalforge.metrics import information_coefficient, sharpe_ratio
 from signalforge.modeling import (
     BaselineModelConfig,
@@ -19,6 +21,8 @@ from signalforge.modeling import (
     _summarize_split,
 )
 from signalforge.validation import walk_forward_splits
+
+logger = get_logger(__name__)
 
 ENSEMBLE_METHODS = frozenset({"average", "weighted", "meta"})
 
@@ -34,12 +38,12 @@ class EnsembleConfig:
 
     def __post_init__(self) -> None:
         if self.method not in ENSEMBLE_METHODS:
-            raise ValueError(f"unsupported ensemble method: {self.method}; choose from {ENSEMBLE_METHODS}")
+            raise ModelError(f"unsupported ensemble method: {self.method}; choose from {ENSEMBLE_METHODS}")
         unknown = set(self.model_types) - set(BASE_MODEL_TYPES)
         if unknown:
-            raise ValueError(f"unknown model types: {unknown}; choose from {BASE_MODEL_TYPES}")
+            raise ModelError(f"unknown model types: {unknown}; choose from {BASE_MODEL_TYPES}")
         if len(self.model_types) < 2:
-            raise ValueError("ensemble requires at least two model types")
+            raise ModelError("ensemble requires at least two model types")
 
 
 def train_ensemble_walkforward(
@@ -68,7 +72,11 @@ def train_ensemble_walkforward(
     frame = frame.dropna(subset=[*feats, bcfg.target_col, bcfg.realized_return_col])
     frame = frame.sort_values(["date", "symbol"]).reset_index(drop=True)
     if frame.empty:
-        raise ValueError("no model-ready rows remain after dropping null features and targets")
+        raise ModelError("no model-ready rows remain after dropping null features and targets")
+    logger.info(
+        "ensemble walkforward: method=%s, models=%s, %d features, %d rows",
+        ecfg.method, ecfg.model_types, len(feats), len(frame),
+    )
 
     prediction_frames: list[pd.DataFrame] = []
     ensemble_summaries: list[dict[str, Any]] = []
@@ -145,10 +153,14 @@ def train_ensemble_walkforward(
             oof_predictions.append(oof)
 
     if not prediction_frames:
-        raise ValueError("walk-forward configuration produced no usable validation splits")
+        raise ModelError("walk-forward configuration produced no usable validation splits")
 
     all_predictions = pd.concat(prediction_frames, ignore_index=True)
     summary = pd.DataFrame(ensemble_summaries)
+    logger.info(
+        "ensemble walkforward complete: %d splits, %d predictions",
+        len(summary), len(all_predictions),
+    )
 
     metadata: dict[str, Any] = {
         "ensemble_config": asdict(ecfg),

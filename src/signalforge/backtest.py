@@ -5,6 +5,11 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from signalforge.exceptions import BacktestError
+from signalforge.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass(frozen=True)
 class BacktestConfig:
@@ -46,10 +51,11 @@ def long_short_daily_returns(
     required = {date_col, symbol_col, score_col, return_col}
     missing = required.difference(scored_returns.columns)
     if missing:
-        raise KeyError(f"scored_returns is missing required columns: {sorted(missing)}")
+        raise BacktestError(f"scored_returns is missing required columns: {sorted(missing)}")
 
     rows = []
     symbol_trade_counts: dict[str, int] = {}
+    day_count = 0
     for date, day in scored_returns.dropna(subset=[score_col, return_col]).groupby(date_col):
         positions = build_daily_positions(
             day,
@@ -75,7 +81,15 @@ def long_short_daily_returns(
                 "gross_exposure": gross_exposure,
             }
         )
+        day_count += 1
 
+    if not rows:
+        raise BacktestError("no valid rows after dropping missing scores and returns")
+
+    logger.info(
+        "long_short backtest complete: %d days, %d rows processed",
+        day_count, len(scored_returns),
+    )
     returns = pd.DataFrame(rows).sort_values(date_col).reset_index(drop=True)
     return apply_risk_controls(returns, config=cfg)
 
@@ -147,7 +161,7 @@ def apply_risk_controls(
     """Apply lagged volatility targeting and drawdown cooldown controls."""
     cfg = config or BacktestConfig()
     if return_col not in daily_returns.columns:
-        raise KeyError(f"daily_returns is missing required column: {return_col}")
+        raise BacktestError(f"daily_returns is missing required column: {return_col}")
 
     controlled = daily_returns.copy()
     controlled["leverage"] = _lagged_volatility_leverage(controlled[return_col], config=cfg)
@@ -157,6 +171,7 @@ def apply_risk_controls(
     cooldown_remaining = 0
     equity = 1.0
     peak = 1.0
+    cooldown_events = 0
 
     for raw_return, leverage in zip(controlled[return_col], controlled["leverage"], strict=True):
         enabled = cooldown_remaining <= 0
@@ -167,11 +182,15 @@ def apply_risk_controls(
 
         if enabled and cfg.max_drawdown_stop is not None and drawdown <= -cfg.max_drawdown_stop:
             cooldown_remaining = cfg.cooldown_days
+            cooldown_events += 1
         elif cooldown_remaining > 0:
             cooldown_remaining -= 1
 
         trading_enabled.append(enabled)
         risk_returns.append(adjusted_return)
+
+    if cooldown_events:
+        logger.warning("drawdown stop triggered %d time(s) during backtest", cooldown_events)
 
     controlled["risk_net_return"] = risk_returns
     controlled["risk_trading_enabled"] = trading_enabled
@@ -183,31 +202,31 @@ def _validate_config(config: BacktestConfig) -> None:
     for name in ("long_fraction", "short_fraction", "max_position_weight"):
         value = getattr(config, name)
         if value <= 0 or value > 1:
-            raise ValueError(f"{name} must be in (0, 1]")
+            raise BacktestError(f"{name} must be in (0, 1]")
     if config.transaction_cost_bps < 0 or config.slippage_bps < 0:
-        raise ValueError("costs must be non-negative")
+        raise BacktestError("costs must be non-negative")
     if config.target_volatility is not None and config.target_volatility <= 0:
-        raise ValueError("target_volatility must be positive")
+        raise BacktestError("target_volatility must be positive")
     if config.volatility_lookback <= 1:
-        raise ValueError("volatility_lookback must be greater than 1")
+        raise BacktestError("volatility_lookback must be greater than 1")
     if config.max_leverage <= 0:
-        raise ValueError("max_leverage must be positive")
+        raise BacktestError("max_leverage must be positive")
     if config.max_drawdown_stop is not None and not 0 < config.max_drawdown_stop < 1:
-        raise ValueError("max_drawdown_stop must be in (0, 1)")
+        raise BacktestError("max_drawdown_stop must be in (0, 1)")
     if config.cooldown_days < 0:
-        raise ValueError("cooldown_days must be non-negative")
+        raise BacktestError("cooldown_days must be non-negative")
     if config.max_symbol_trades is not None and config.max_symbol_trades <= 0:
-        raise ValueError("max_symbol_trades must be positive")
+        raise BacktestError("max_symbol_trades must be positive")
     if config.initial_capital is not None and config.initial_capital <= 0:
-        raise ValueError("initial_capital must be positive")
+        raise BacktestError("initial_capital must be positive")
     if config.min_trade_dollars < 0:
-        raise ValueError("min_trade_dollars must be non-negative")
+        raise BacktestError("min_trade_dollars must be non-negative")
     if config.min_score is not None and not np.isfinite(config.min_score):
-        raise ValueError("min_score must be finite")
+        raise BacktestError("min_score must be finite")
     if config.rebalance_interval_days <= 0:
-        raise ValueError("rebalance_interval_days must be positive")
+        raise BacktestError("rebalance_interval_days must be positive")
     if config.max_adv_fraction is not None and config.max_adv_fraction <= 0:
-        raise ValueError("max_adv_fraction must be positive")
+        raise BacktestError("max_adv_fraction must be positive")
 
 
 def _lagged_volatility_leverage(returns: pd.Series, *, config: BacktestConfig) -> pd.Series:
@@ -232,14 +251,18 @@ def _select_side(
     config: BacktestConfig,
 ) -> pd.DataFrame:
     selected_rows = []
+    skipped_count = 0
     for _, row in ranked.iterrows():
         symbol = row[symbol_col]
         if _symbol_cap_reached(symbol, symbol_trade_counts, config=config):
+            skipped_count += 1
             continue
         selected_rows.append(row)
         symbol_trade_counts[symbol] = symbol_trade_counts.get(symbol, 0) + 1
         if len(selected_rows) == desired_count:
             break
+    if skipped_count:
+        logger.debug("skipped %d symbols due to trade cap", skipped_count)
     if not selected_rows:
         return ranked.head(0)
     return pd.DataFrame(selected_rows)
@@ -301,7 +324,7 @@ def long_only_capital_backtest(
     required = {date_col, symbol_col, score_col, return_col, price_col}
     missing = required.difference(scored_returns.columns)
     if missing:
-        raise KeyError(f"scored_returns is missing required columns: {sorted(missing)}")
+        raise BacktestError(f"scored_returns is missing required columns: {sorted(missing)}")
 
     rows = []
     symbol_trade_counts: dict[str, int] = {}
@@ -373,6 +396,7 @@ def long_only_capital_backtest(
         )
 
     returns = pd.DataFrame(rows).sort_values(date_col).reset_index(drop=True)
+    logger.info("long_only capital backtest complete: final capital %.2f", capital)
     return apply_risk_controls(returns, config=cfg)
 
 
@@ -418,7 +442,7 @@ def event_based_long_only_backtest(
     }
     missing = required.difference(signals.columns)
     if missing:
-        raise KeyError(f"signals is missing required columns: {sorted(missing)}")
+        raise BacktestError(f"signals is missing required columns: {sorted(missing)}")
 
     frame = signals.copy()
     frame[signal_date_col] = pd.to_datetime(frame[signal_date_col])
@@ -430,6 +454,7 @@ def event_based_long_only_backtest(
     symbol_trade_counts: dict[str, int] = {}
     peak_capital = capital
     cooldown_remaining = 0
+    skipped_reasons: dict[str, int] = {}
     for day_index, (signal_date, day) in enumerate(frame.groupby(signal_date_col, sort=True)):
         trading_enabled = cooldown_remaining <= 0
         if not trading_enabled:
@@ -460,6 +485,7 @@ def event_based_long_only_backtest(
                 config=cfg,
             )
             if skip_reason is not None:
+                skipped_reasons[skip_reason] = skipped_reasons.get(skip_reason, 0) + 1
                 ledger_rows.append(_skipped_trade_row(row, signal_date, symbol_col, skip_reason))
                 continue
 
@@ -518,6 +544,13 @@ def event_based_long_only_backtest(
         equity_rows.append(
             _event_equity_row(signal_date, capital, opened_positions, invested, day_net_pnl)
         )
+
+    if skipped_reasons:
+        logger.info("skipped trades by reason: %s", skipped_reasons)
+    logger.info(
+        "event-based backtest complete: final capital %.2f, %d trades",
+        capital, len([r for r in ledger_rows if r.get("status") == "filled"]),
+    )
 
     equity = pd.DataFrame(equity_rows)
     if not equity.empty:

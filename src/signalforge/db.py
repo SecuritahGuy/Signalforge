@@ -136,6 +136,22 @@ class SignalForgeDB:
     CREATE INDEX IF NOT EXISTS idx_orders_planned_date ON paper_orders(planned_date);
     CREATE INDEX IF NOT EXISTS idx_run_history_run_date ON run_history(run_date);
     CREATE INDEX IF NOT EXISTS idx_snapshots_date ON account_snapshots(snapshot_date);
+
+    CREATE TABLE IF NOT EXISTS model_registry (
+        model_id          TEXT PRIMARY KEY,
+        model_type        TEXT NOT NULL,
+        version           INTEGER NOT NULL DEFAULT 1,
+        feature_columns   TEXT NOT NULL DEFAULT '[]',
+        config_json       TEXT NOT NULL DEFAULT '{}',
+        metrics_json      TEXT NOT NULL DEFAULT '{}',
+        artifact_path     TEXT NOT NULL,
+        training_rows     INTEGER DEFAULT 0,
+        training_symbols  INTEGER DEFAULT 0,
+        training_end_date TEXT,
+        created_at        TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_model_registry_type ON model_registry(model_type);
     """
 
     # ------------------------------------------------------------------
@@ -344,6 +360,74 @@ class SignalForgeDB:
             "SELECT * FROM account_snapshots ORDER BY snapshot_date"
         ).fetchall()
         return self._rows_to_df(rows)
+
+    # ------------------------------------------------------------------
+    # Model registry
+    # ------------------------------------------------------------------
+
+    def register_model(self, metadata: dict[str, Any]) -> str:
+        """Register a model in the registry. Returns model_id."""
+        row = {
+            "model_id": str(metadata["model_id"]),
+            "model_type": str(metadata["model_type"]),
+            "version": int(metadata.get("version", 1)),
+            "feature_columns": json.dumps(metadata.get("feature_columns", [])),
+            "config_json": json.dumps(metadata.get("config_json", {}), default=str),
+            "metrics_json": json.dumps(metadata.get("metrics_json", {}), default=str),
+            "artifact_path": str(metadata["artifact_path"]),
+            "training_rows": int(metadata.get("training_rows", 0)),
+            "training_symbols": int(metadata.get("training_symbols", 0)),
+            "training_end_date": str(metadata.get("training_end_date", "")),
+        }
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO model_registry
+                (model_id, model_type, version, feature_columns, config_json,
+                 metrics_json, artifact_path, training_rows, training_symbols,
+                 training_end_date)
+            VALUES
+                (:model_id, :model_type, :version, :feature_columns, :config_json,
+                 :metrics_json, :artifact_path, :training_rows, :training_symbols,
+                 :training_end_date)
+            """,
+            row,
+        )
+        self._conn.commit()
+        return str(row["model_id"])
+
+    def get_model(self, model_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM model_registry WHERE model_id = ?", (model_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["feature_columns"] = json.loads(result.get("feature_columns", "[]"))
+        result["config_json"] = json.loads(result.get("config_json", "{}"))
+        result["metrics_json"] = json.loads(result.get("metrics_json", "{}"))
+        return result
+
+    def list_models(
+        self, model_type: str | None = None, limit: int = 50
+    ) -> pd.DataFrame:
+        if model_type:
+            rows = self._conn.execute(
+                "SELECT * FROM model_registry WHERE model_type = ? ORDER BY created_at DESC LIMIT ?",
+                (model_type, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM model_registry ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return self._rows_to_df(rows)
+
+    def delete_model(self, model_id: str) -> bool:
+        cursor = self._conn.execute(
+            "DELETE FROM model_registry WHERE model_id = ?", (model_id,)
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
     # Utility

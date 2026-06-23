@@ -9,6 +9,7 @@ from signalforge.ensemble import (
     EnsembleConfig,
     train_ensemble_walkforward,
 )
+from signalforge.exceptions import ModelError
 from signalforge.modeling import BaselineModelConfig
 
 
@@ -37,6 +38,21 @@ def _research_frame() -> pd.DataFrame:
                     "avg_dollar_volume_20d": 100_000_000 + sym_idx,
                     "sector_rank_momentum_20d": (sym_idx + 1) / 4,
                     "sector_rank_volatility_20d": (4 - sym_idx) / 4,
+                    "return_20d_lag_1": base * 2,
+                    "volatility_20d_lag_1": 0.02 + sym_idx / 1_000,
+                    "rsi_14": 50.0 + sym_idx,
+                    "macd_histogram_12_26_9": 0.01 * sym_idx,
+                    "bollinger_pct_b_20_2": 0.5 + sym_idx / 10,
+                    "atr_14": 1.0 + sym_idx,
+                    "day_of_week_sin": 0.0,
+                    "day_of_week_cos": 1.0,
+                    "month_sin": 0.0,
+                    "month_cos": 1.0,
+                    "zscore_return_20d": 0.0,
+                    "zscore_volatility_20d": 0.0,
+                    "return_20d_x_volatility_20d": base * 2 * 0.02,
+                    "momentum_factor": 0.0,
+                    "low_vol_factor": 0.5,
                     "fwd_5d_return": base / 10 + sym_idx / 1_000,
                     "fwd_5d_excess_return": base / 20 + sym_idx / 1_000,
                 }
@@ -126,17 +142,17 @@ def test_ensemble_meta_returns_predictions():
 
 
 def test_ensemble_raises_with_single_model():
-    with pytest.raises(ValueError, match="at least two model types"):
+    with pytest.raises(ModelError, match="at least two model types"):
         EnsembleConfig(model_types=("ridge",))
 
 
 def test_ensemble_raises_with_unknown_model():
-    with pytest.raises(ValueError, match="unknown model types"):
+    with pytest.raises(ModelError, match="unknown model types"):
         EnsembleConfig(model_types=("ridge", "fake_model"))
 
 
 def test_ensemble_raises_with_unknown_method():
-    with pytest.raises(ValueError, match="unsupported ensemble method"):
+    with pytest.raises(ModelError, match="unsupported ensemble method"):
         EnsembleConfig(model_types=("ridge", "elasticnet"), method="unknown")
 
 

@@ -5,6 +5,7 @@ import pytest
 
 from signalforge.backtest import BacktestConfig
 from signalforge.data import load_price_csv, load_universe_csv, split_benchmark_prices
+from signalforge.exceptions import DataError
 from signalforge.features import add_sector_relative_features, build_price_features
 from signalforge.research import build_research_frame, run_momentum_smoke_backtest
 from signalforge.validation import walk_forward_splits
@@ -36,7 +37,7 @@ def test_load_universe_csv_requires_core_metadata(tmp_path: Path):
 def test_split_benchmark_prices_requires_benchmark():
     prices = _synthetic_prices(["AAPL"], periods=3)
 
-    with pytest.raises(ValueError, match="benchmark symbol"):
+    with pytest.raises(DataError, match="benchmark symbol"):
         split_benchmark_prices(prices)
 
 

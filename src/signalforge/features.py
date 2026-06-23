@@ -3,6 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from signalforge.exceptions import FeatureError
+from signalforge.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def build_price_features(
     prices: pd.DataFrame,
@@ -15,25 +20,31 @@ def build_price_features(
     sma_windows: tuple[int, ...] = (10, 20, 50, 200),
     range_windows: tuple[int, ...] = (10, 20, 60, 120),
     volume_windows: tuple[int, ...] = (10, 20, 40, 120),
+    lagged_features: bool = False,
+    calendar_features: bool = False,
+    cross_sectional_features: bool = False,
+    technical_indicators: bool = False,
+    interaction_features: bool = False,
+    factor_proxies: bool = False,
 ) -> pd.DataFrame:
     """Build leakage-safe daily technical features from adjusted prices.
 
-    Rolling features use values available at the close of each row's date.
-    Label generation remains separate so future returns are never included here.
-
     Parameters
     ----------
-    return_windows : windows for return/momentum/volatility features.
-    sma_windows : windows for simple-moving-average features.
-    range_windows : windows for high/low range and drawdown features.
-    volume_windows : windows for average volume and dollar-volume features.
+    lagged_features : if True, add lagged versions of key return/volatility columns.
+    calendar_features : if True, add day-of-week, month, quarter features.
+    cross_sectional_features : if True, add per-date z-scores across the universe.
+    technical_indicators : if True, add RSI, MACD, Bollinger Bands, ATR.
+    interaction_features : if True, add return×volatility and volatility×volume pairs.
+    factor_proxies : if True, add momentum-factor, low-vol, and quality proxies.
     """
     required = {date_col, symbol_col, price_col, volume_col}
     missing = required.difference(prices.columns)
     if missing:
-        raise KeyError(f"prices are missing required columns: {sorted(missing)}")
+        raise FeatureError(f"prices are missing required columns: {sorted(missing)}")
 
     frame = prices.sort_values([symbol_col, date_col]).reset_index(drop=True).copy()
+    logger.debug("building price features for %d rows", len(frame))
     grouped = frame.groupby(symbol_col, sort=False)
 
     frame["adj_open"] = frame["open"] * frame[price_col].div(frame["close"])
@@ -101,7 +112,168 @@ def build_price_features(
         frame[f"drawdown_{window}d"] = frame[f"distance_from_{window}d_high"]
         frame[f"high_low_range_{window}d"] = rolling_high.div(rolling_low).sub(1.0)
 
+    if lagged_features:
+        _add_lagged_features(frame, grouped, return_windows)
+    if calendar_features:
+        _add_calendar_features(frame, date_col)
+    if cross_sectional_features:
+        _add_cross_sectional_features(frame, date_col, return_windows)
+    if technical_indicators:
+        _add_technical_indicators(frame, grouped, price_col)
+    if interaction_features:
+        _add_interaction_features(frame, return_windows, volume_windows)
+    if factor_proxies:
+        _add_factor_proxies(frame, grouped, return_windows)
+
+    logger.debug(
+        "built %d features (%d columns) for %d rows",
+        sum(1 for c in frame.columns if c not in prices.columns),
+        len(frame.columns),
+        len(frame),
+    )
     return frame
+
+
+def _add_lagged_features(
+    frame: pd.DataFrame,
+    grouped: pd.core.groupby.DataFrameGroupBy,
+    return_windows: tuple[int, ...],
+) -> None:
+    for window in return_windows[:3]:
+        ret_col = f"return_{window}d"
+        vol_col = f"volatility_{window}d"
+        frame[f"{ret_col}_lag_1"] = grouped[ret_col].shift(1)
+        frame[f"{vol_col}_lag_1"] = grouped[vol_col].shift(1)
+
+
+def _add_calendar_features(frame: pd.DataFrame, date_col: str) -> None:
+    dates = pd.to_datetime(frame[date_col])
+    frame["day_of_week"] = dates.dt.dayofweek
+    frame["day_of_week_sin"] = np.sin(2 * np.pi * frame["day_of_week"] / 7)
+    frame["day_of_week_cos"] = np.cos(2 * np.pi * frame["day_of_week"] / 7)
+    frame["month"] = dates.dt.month
+    frame["month_sin"] = np.sin(2 * np.pi * (frame["month"] - 1) / 12)
+    frame["month_cos"] = np.cos(2 * np.pi * (frame["month"] - 1) / 12)
+    frame["quarter"] = dates.dt.quarter
+    frame["days_to_month_end"] = dates.dt.days_in_month - dates.dt.day
+    frame["is_month_end"] = dates.dt.is_month_end.astype(int)
+
+
+def _add_cross_sectional_features(
+    frame: pd.DataFrame,
+    date_col: str,
+    return_windows: tuple[int, ...],
+) -> None:
+    zscore_cols = [
+        f"return_{window}d" for window in [return_windows[0], return_windows[2]]
+    ] + [
+        f"volatility_{window}d" for window in [return_windows[0], return_windows[2], return_windows[-1]]
+    ] + [
+        "relative_volume_20d",
+        "log_avg_dollar_volume_20d",
+    ]
+    for col in zscore_cols:
+        if col in frame.columns:
+            zscore = frame.groupby(date_col, sort=False)[col].transform(
+                lambda x: (x - x.mean()) / x.std()
+            )
+            frame[f"zscore_{col}"] = zscore
+
+
+def _add_technical_indicators(
+    frame: pd.DataFrame,
+    grouped: pd.core.groupby.DataFrameGroupBy,
+    price_col: str,
+) -> None:
+    delta = grouped[price_col].diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.groupby(frame["symbol"], sort=False).transform(
+        lambda s: s.rolling(14, min_periods=14).mean()
+    )
+    avg_loss = loss.groupby(frame["symbol"], sort=False).transform(
+        lambda s: s.rolling(14, min_periods=14).mean()
+    )
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    frame["rsi_14"] = 100 - (100 / (1 + rs))
+
+    ema_12 = grouped[price_col].transform(
+        lambda s: s.ewm(span=12, adjust=False).mean()
+    )
+    ema_26 = grouped[price_col].transform(
+        lambda s: s.ewm(span=26, adjust=False).mean()
+    )
+    macd = ema_12 - ema_26
+    signal = macd.groupby(frame["symbol"], sort=False).transform(
+        lambda s: s.ewm(span=9, adjust=False).mean()
+    )
+    frame["macd_12_26"] = macd
+    frame["macd_signal_9"] = signal
+    frame["macd_histogram_12_26_9"] = macd - signal
+
+    sma_20 = grouped[price_col].transform(
+        lambda s: s.rolling(20, min_periods=20).mean()
+    )
+    std_20 = grouped[price_col].transform(
+        lambda s: s.rolling(20, min_periods=20).std()
+    )
+    upper = sma_20 + 2 * std_20
+    lower = sma_20 - 2 * std_20
+    frame["bollinger_pct_b_20_2"] = (frame[price_col] - lower) / (upper - lower)
+    frame["bollinger_width_20_2"] = (upper - lower) / sma_20
+
+    high = frame["high"]
+    low = frame["low"]
+    prev_close = grouped[price_col].shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    frame["atr_14"] = true_range.groupby(frame["symbol"], sort=False).transform(
+        lambda s: s.rolling(14, min_periods=14).mean()
+    )
+
+
+def _add_interaction_features(
+    frame: pd.DataFrame,
+    return_windows: tuple[int, ...],
+    volume_windows: tuple[int, ...],
+) -> None:
+    pairs = [
+        (f"return_{return_windows[1]}d", f"volatility_{return_windows[1]}d"),
+        (f"return_{return_windows[0]}d", f"volatility_{return_windows[0]}d"),
+    ]
+    if len(volume_windows) > 0:
+        pairs.append((f"volatility_{return_windows[1]}d", f"relative_volume_{volume_windows[0]}d"))
+    if len(return_windows) > 0:
+        pairs.append((f"return_{return_windows[2]}d", "volume_change_5d"))
+
+    for col1, col2 in pairs:
+        if col1 in frame.columns and col2 in frame.columns:
+            frame[f"{col1}_x_{col2}"] = frame[col1] * frame[col2]
+
+
+def _add_factor_proxies(
+    frame: pd.DataFrame,
+    grouped: pd.core.groupby.DataFrameGroupBy,
+    return_windows: tuple[int, ...],
+) -> None:
+    if len(return_windows) >= 6:
+        ret_long = f"return_{return_windows[-1]}d"
+        ret_short = f"return_{return_windows[1]}d"
+        if ret_long in frame.columns and ret_short in frame.columns:
+            frame["momentum_factor"] = frame[ret_long] - frame[ret_short]
+
+    vol_col = f"volatility_{return_windows[2] if len(return_windows) > 2 else return_windows[-1]}d"
+    if vol_col in frame.columns:
+        rank = frame.groupby("date", sort=False)[vol_col].rank(pct=True)
+        frame["low_vol_factor"] = 1 - rank
+
+    if "return_1d" in frame.columns:
+        stability = grouped["return_1d"].transform(
+            lambda s: s.rolling(60, min_periods=60).std()
+        )
+        frame["quality_factor"] = -stability
 
 
 def add_sector_relative_features(
@@ -117,7 +289,7 @@ def add_sector_relative_features(
     required_universe = {symbol_col, sector_col}
     missing_universe = required_universe.difference(universe.columns)
     if missing_universe:
-        raise KeyError(f"universe is missing required columns: {sorted(missing_universe)}")
+        raise FeatureError(f"universe is missing required columns: {sorted(missing_universe)}")
 
     frame = features.merge(universe[[symbol_col, sector_col]], on=symbol_col, how="left")
     new_cols: dict[str, pd.Series] = {}
@@ -157,7 +329,7 @@ def add_market_relative_features(
 ) -> pd.DataFrame:
     """Add benchmark-relative return, beta, and correlation features."""
     if date_col not in benchmark_prices.columns or price_col not in benchmark_prices.columns:
-        raise KeyError(f"benchmark_prices must include {date_col!r} and {price_col!r}")
+        raise FeatureError(f"benchmark_prices must include {date_col!r} and {price_col!r}")
 
     benchmark = benchmark_prices.sort_values(date_col).reset_index(drop=True).copy()
     benchmark[date_col] = pd.to_datetime(benchmark[date_col])
