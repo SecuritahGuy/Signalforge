@@ -165,7 +165,7 @@ def apply_risk_controls(
         peak = max(peak, equity)
         drawdown = equity / peak - 1.0
 
-        if cfg.max_drawdown_stop is not None and drawdown <= -cfg.max_drawdown_stop:
+        if enabled and cfg.max_drawdown_stop is not None and drawdown <= -cfg.max_drawdown_stop:
             cooldown_remaining = cfg.cooldown_days
         elif cooldown_remaining > 0:
             cooldown_remaining -= 1

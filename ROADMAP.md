@@ -21,7 +21,7 @@
 - [x] **Implement rebalance exit rule** — replaces the prior placeholder in `paper.py`.
 - [x] **Wire up LightGBM and XGBoost** — optional deps in `pyproject.toml`, integrated into `modeling.py` with try/except.
 - [x] **Add risk-parity and volatility-target position sizing** — inverse-volatility sizing in `portfolio_backtest.py`.
-- [ ] **Make YAML configs authoritative or remove them** — `config/research.yaml` is never loaded at runtime, creating a documentation/code drift risk.
+- [x] **Make YAML configs authoritative or remove them** — `config/research.yaml` removed.
 - [x] **Set up CI (GitHub Actions)** — runs tests on every push.
 - [x] **Initial git commit** — baselines the project.
 
@@ -30,7 +30,7 @@
 - [x] **Persistent metadata store** — SQLite paper ledger, run history, account snapshots in `db.py`.
 - [x] **Trailing Volatility Stop** — adaptive stop distance based on rolling daily volatility, clamped by tightest/widest bounds.
 - [x] **Time-based Decay** — exits when `days_held >= half_life_days * log2(entry_score / min_score_for_decay)`; higher-conviction entries get longer runway.
-- [ ] **Add more exit rule variants** — sector-stop.
+- [x] **Add more exit rule variants** — sector-stop.
 - [x] **Model ensemble and stacking** — average/weighted/meta blending in `ensemble.py` with walk-forward.
 - [x] **Multi-timeframe features** — extended windows (5, 10, 20, 40, 60, 120) for returns/vol/momentum; SMA (10, 50, 200); range (10, 60, 120); volume/dollar-volume at (10, 40, 120); beta/corr at 60d/120d; all sector/market relatives extended; configurable via function params.
 - [ ] **Feature importance monitoring** — drift detection for feature distributions and model SHAP values over time.

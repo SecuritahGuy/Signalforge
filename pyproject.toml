@@ -25,6 +25,12 @@ modeling = [
   "lightgbm>=4.3",
   "xgboost>=2.0",
 ]
+server = [
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "sse-starlette>=1.8",
+  "pydantic>=2.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -34,7 +34,7 @@ src/signalforge/
 data/reference/
   tracked_universe.csv  Initial symbols: mega-cap tech, selected fun names, SPY
 config/
-  research.yaml   Default research settings
+  paper.yaml      Active exit-rules and paper-trading config
 tests/
   Unit tests for leakage-sensitive behavior
 ```

@@ -11,7 +11,9 @@
 - **Time-based Decay exit rule** (`paper.py`): exits when days_held reaches `half_life_days * log2(entry_score / min_score_for_decay)`, giving higher-conviction entries longer runway
 - **Multi-timeframe features** (`features.py`): extended windows from (5, 20, 60) → (5, 10, 20, 40, 60, 120) for returns/volatility/momentum; added SMA (10, 50, 200), range (10, 60, 120), volume (10, 40, 120) windows; beta/correlation at 60d and 120d; all sector/market relatives extended; configurable via function parameters
 - **Sector-stop exit rule** (`paper.py`): exits when rolling mean return of the position's sector falls below `sector_decline_pct`; accepts optional `universe` DataFrame in `reconcile_exits` for symbol→sector mapping; enforces `min_sector_records` to avoid thin-sector false triggers
-- 178 tests, all passing
+- 234 tests, all passing (+58 new backtest tests, 57 direct + 1 existing migrated; fixed cooldown re-trigger bug in `backtest.py`)
+- **Removed `config/research.yaml`** — dead code, never loaded at runtime; research.py uses explicit function params and BacktestConfig dataclass
+- **Server deps declared** — `pip install -e ".[server]"` for fastapi, uvicorn, sse-starlette, pydantic
 
 ## Blocked
 (none)
