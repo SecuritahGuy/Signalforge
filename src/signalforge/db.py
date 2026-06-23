@@ -90,6 +90,10 @@ class SignalForgeDB:
         highest_close_since_entry REAL,
         trailing_stop_activated INTEGER DEFAULT 0,
         skip_reason       TEXT DEFAULT '',
+        requested_shares  REAL DEFAULT 0.0,
+        filled_shares     REAL DEFAULT 0.0,
+        borrow_cost       REAL DEFAULT 0.0,
+        dividends         REAL DEFAULT 0.0,
         created_at        TEXT DEFAULT (datetime('now')),
         updated_at        TEXT DEFAULT (datetime('now'))
     );

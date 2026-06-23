@@ -35,6 +35,10 @@ PAPER_LEDGER_COLUMNS = (
     "highest_close_since_entry",
     "trailing_stop_activated",
     "skip_reason",
+    "requested_shares",
+    "filled_shares",
+    "borrow_cost",
+    "dividends",
 )
 
 
@@ -96,6 +100,29 @@ class SectorStopConfig:
 
 
 @dataclass(frozen=True)
+class FillConfig:
+    enabled: bool = False
+    fill_pct: float = 1.0
+    fill_window_days: int = 1
+    min_fill_pct: float = 0.1
+
+
+@dataclass(frozen=True)
+class BorrowCostConfig:
+    enabled: bool = False
+    annual_rate: float = 0.03
+    hard_to_borrow_rate: float = 0.50
+    hard_to_borrow_symbols: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class DividendConfig:
+    enabled: bool = False
+    assumed_annual_yield: float = 0.02
+    accrual_mode: str = "assumed_yield"
+
+
+@dataclass(frozen=True)
 class ExitRulesConfig:
     horizon_days: int = 20
     stop_loss: StopLossConfig = field(default_factory=StopLossConfig)
@@ -122,6 +149,9 @@ class PaperTradingConfig:
     slippage_bps: float = 5.0
     allow_fractional_shares: bool = False
     exit_rules: ExitRulesConfig = field(default_factory=ExitRulesConfig)
+    fill: FillConfig = field(default_factory=FillConfig)
+    borrow_cost: BorrowCostConfig = field(default_factory=BorrowCostConfig)
+    dividends: DividendConfig = field(default_factory=DividendConfig)
 
 
 def build_planned_orders(
@@ -206,6 +236,8 @@ def build_planned_orders(
 
     ledger = pd.DataFrame(rows).loc[:, PAPER_LEDGER_COLUMNS]
     ledger["order_id"] = _order_ids(ledger)
+    ledger["requested_shares"] = ledger["shares"]
+    ledger["filled_shares"] = 0.0
     return ledger
 
 
@@ -215,52 +247,110 @@ def reconcile_fills(
     *,
     config: PaperTradingConfig | None = None,
 ) -> pd.DataFrame:
-    """Move planned orders to open when next-session open prices are available."""
+    """Move planned orders to open when next-session open prices are available.
+
+    When ``config.fill.enabled`` is True, orders may be partially filled
+    (based on ``fill_pct``) and fills may be spread across multiple days
+    (based on ``fill_window_days``).
+    """
     cfg = config or PaperTradingConfig()
     _validate_config(cfg)
     output = _normalize_ledger(ledger)
     output = _dedupe_active_orders(output)
     price_lookup = _price_lookup(prices)
     available_cash = _current_cash(output, initial_capital=cfg.initial_capital)
-    active_symbols = set(output.loc[output["status"] == "open", "symbol"].str.upper())
 
-    planned = output.loc[output["status"] == "planned"].sort_values(
-        ["planned_date", "order_id"]
-    )
-    for index, row in planned.iterrows():
-        symbol = row["symbol"].upper()
-        if symbol in active_symbols:
-            _skip_order_in_place(output, index, reason="duplicate_active_symbol")
-            continue
-        fill_date = _next_available_date(
-            price_lookup,
-            row["symbol"],
-            pd.Timestamp(row["planned_date"]),
-        )
+    # Collect all orders eligible for fill attempts
+    fillable = output.loc[
+        output["status"].isin(["planned", "filling"])
+    ].sort_values(["planned_date", "order_id"])
+
+    for index, row in fillable.iterrows():
+        symbol = str(row["symbol"]).upper()
+
+        # Prevent new planned orders for symbols that already have an active position
+        if row["status"] == "planned":
+            active_symbols = set(output.loc[output["status"].isin(["open", "filling"]), "symbol"].str.upper())
+            if symbol in active_symbols:
+                _skip_order_in_place(output, index, reason="duplicate_active_symbol")
+                continue
+
+        # Determine next available fill date from the latest fill attempt
+        last_date = pd.Timestamp(row["fill_date"]) if pd.notna(row["fill_date"]) else pd.Timestamp(row["planned_date"])
+        fill_date = _next_available_date(price_lookup, row["symbol"], last_date)
         if fill_date is None:
             continue
+
+        requested = float(row.get("requested_shares", row["shares"]))
+        already_filled = float(row.get("filled_shares", 0.0))
+        remaining = requested - already_filled
+
+        if remaining <= 0:
+            if row["status"] == "filling":
+                _mark_filled(output, index, row, cfg)
+            continue
+
+        # Compute fill quantity for this attempt
+        if cfg.fill.enabled and cfg.fill.fill_pct < 1.0:
+            attempt_fill = remaining * cfg.fill.fill_pct
+            attempt_fill = max(attempt_fill, remaining * cfg.fill.min_fill_pct)
+            total_filled = already_filled + attempt_fill
+            # Force-fill the remainder if close enough to target
+            remaining_after = max(0.0, requested - total_filled)
+            if remaining_after <= cfg.fill.min_fill_pct * requested:
+                total_filled = requested
+            # Round to whole shares unless fractional allowed
+            if not cfg.allow_fractional_shares:
+                total_filled = np.floor(total_filled)
+            total_filled = min(total_filled, requested)
+            attempt_fill = total_filled - already_filled
+        else:
+            attempt_fill = remaining
+            total_filled = requested
+
+        if attempt_fill <= 0:
+            _skip_order_in_place(output, index, reason="fill_size_zero")
+            continue
+
         price_row = price_lookup[(row["symbol"], fill_date)]
         entry_price = _adjusted_open(price_row)
-        entry_value = row["shares"] * entry_price
-        entry_cost = _trade_cost(
-            entry_value,
+        attempt_value = attempt_fill * entry_price
+        attempt_cost = _trade_cost(
+            attempt_value,
             transaction_cost_bps=cfg.transaction_cost_bps,
             slippage_bps=cfg.slippage_bps,
         )
-        required_cash = entry_value + entry_cost
+        required_cash = attempt_value + attempt_cost
+
         if required_cash > available_cash:
             _skip_order_in_place(output, index, reason="insufficient_cash_at_fill")
             continue
-        output.loc[index, ["status", "fill_date", "entry_price", "entry_value", "entry_cost"]] = [
-            "open",
-            fill_date,
-            entry_price,
-            entry_value,
-            entry_cost,
-        ]
+
         available_cash -= required_cash
-        active_symbols.add(symbol)
+        is_final = total_filled >= requested - 0.001  # tolerance for floating point
+        status = "open" if is_final else "filling"
+        new_fill_date = fill_date
+        new_total_filled = total_filled
+        new_total_value = float(row.get("entry_value", 0.0)) + attempt_value
+        new_total_cost = float(row.get("entry_cost", 0.0)) + attempt_cost
+        avg_entry_price = new_total_value / new_total_filled if new_total_filled else entry_price
+
+        output.loc[index, [
+            "status", "fill_date", "entry_price", "entry_value", "entry_cost",
+            "shares", "filled_shares",
+        ]] = [
+            status, new_fill_date, avg_entry_price, new_total_value, new_total_cost,
+            new_total_filled, new_total_filled,
+        ]
+
     return output.loc[:, PAPER_LEDGER_COLUMNS]
+
+
+def _mark_filled(
+    output: pd.DataFrame, index: int, row: pd.Series, cfg: PaperTradingConfig
+) -> None:
+    """Mark a ``filling`` order as fully ``open``."""
+    output.loc[index, "status"] = "open"
 
 
 def reconcile_exits(
@@ -318,14 +408,17 @@ def reconcile_exits(
             continue
         exit_date = decision["exit_date"]
         exit_price = decision["exit_price"]
-        exit_value = row["shares"] * exit_price
+        actual_shares = float(row["shares"])
+        exit_value = actual_shares * exit_price
         exit_cost = _trade_cost(
             exit_value,
             transaction_cost_bps=cfg.transaction_cost_bps,
             slippage_bps=cfg.slippage_bps,
         )
-        gross_pnl = exit_value - row["entry_value"]
-        net_pnl = gross_pnl - row["entry_cost"] - exit_cost
+        cumulative_borrow = float(row.get("borrow_cost", 0.0))
+        cumulative_dividends = float(row.get("dividends", 0.0))
+        gross_pnl = exit_value - row["entry_value"] + cumulative_dividends
+        net_pnl = gross_pnl - row["entry_cost"] - exit_cost - cumulative_borrow
         output.loc[
             index,
             [
@@ -361,6 +454,129 @@ def reconcile_exits(
             decision["trailing_stop_activated"],
         ]
     return output.loc[:, PAPER_LEDGER_COLUMNS]
+
+
+def reconcile_borrow_costs(
+    ledger: pd.DataFrame,
+    prices: pd.DataFrame,
+    *,
+    config: PaperTradingConfig | None = None,
+) -> pd.DataFrame:
+    """Accrue daily borrow costs on short positions.
+
+    Should be called in the daily operations loop, once per day, before
+    ``reconcile_exits``. This function is a no-op unless
+    ``config.borrow_cost.enabled`` is True.
+    """
+    cfg = config or PaperTradingConfig()
+    if not cfg.borrow_cost.enabled:
+        return ledger
+    output = _normalize_ledger(ledger)
+    price_lookup = _price_lookup(prices)
+    for index, row in output.loc[output["status"] == "open"].iterrows():
+        symbol = str(row["symbol"]).upper()
+        latest = _latest_price(price_lookup, symbol)
+        if latest is None:
+            continue
+        fill_date = row["fill_date"]
+        current_date = latest["date"]
+        if pd.isna(fill_date) or pd.isna(current_date):
+            continue
+        days_held = _business_days_between(fill_date, current_date)
+        rate = (
+            cfg.borrow_cost.hard_to_borrow_rate
+            if symbol in cfg.borrow_cost.hard_to_borrow_symbols
+            else cfg.borrow_cost.annual_rate
+        )
+        daily_rate = rate / 365.0
+        position_value = float(row["entry_value"])
+        daily_cost = position_value * daily_rate
+        total_cost = daily_cost * days_held - float(row.get("borrow_cost", 0.0))
+        if total_cost > 0:
+            existing = float(row.get("borrow_cost", 0.0))
+            output.loc[index, "borrow_cost"] = existing + total_cost
+    return output.loc[:, PAPER_LEDGER_COLUMNS]
+
+
+def reconcile_dividends(
+    ledger: pd.DataFrame,
+    prices: pd.DataFrame,
+    *,
+    config: PaperTradingConfig | None = None,
+    dividend_data: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Accrue dividend income on open long positions.
+
+    Two modes (controlled by ``config.dividends.accrual_mode``):
+
+    - ``assumed_yield`` (default): continuous accrual based on
+      ``assumed_annual_yield``, computed daily matching the borrow cost pattern.
+    - ``dataframe``: one-time dividend events from ``dividend_data`` DataFrame
+      with columns ``symbol``, ``ex_date``, ``dividend_per_share``.
+
+    Should be called in the daily operations loop, once per day, before
+    ``reconcile_exits``. This function is a no-op unless
+    ``config.dividends.enabled`` is True.
+    """
+    cfg = config or PaperTradingConfig()
+    if not cfg.dividends.enabled:
+        return ledger
+    output = _normalize_ledger(ledger)
+
+    if cfg.dividends.accrual_mode == "dataframe":
+        if dividend_data is None or dividend_data.empty:
+            return output.loc[:, PAPER_LEDGER_COLUMNS]
+        _apply_dividend_events(output, dividend_data)
+        return output.loc[:, PAPER_LEDGER_COLUMNS]
+
+    # Default: assumed_yield continuous accrual
+    price_lookup = _price_lookup(prices)
+    for index, row in output.loc[output["status"] == "open"].iterrows():
+        symbol = str(row["symbol"]).upper()
+        latest = _latest_price(price_lookup, symbol)
+        if latest is None:
+            continue
+        fill_date = row["fill_date"]
+        current_date = latest["date"]
+        if pd.isna(fill_date) or pd.isna(current_date):
+            continue
+        days_held = _business_days_between(fill_date, current_date)
+        daily_rate = cfg.dividends.assumed_annual_yield / 365.0
+        position_value = float(row["entry_value"])
+        total_dividend = position_value * daily_rate * days_held
+        existing = float(row.get("dividends", 0.0))
+        incremental = total_dividend - existing
+        if incremental > 0:
+            output.loc[index, "dividends"] = total_dividend
+    return output.loc[:, PAPER_LEDGER_COLUMNS]
+
+
+def _apply_dividend_events(
+    output: pd.DataFrame,
+    dividend_data: pd.DataFrame,
+) -> None:
+    """Apply one-time dividend events from a DataFrame.
+
+    ``dividend_data`` must have columns ``symbol``, ``ex_date``, ``dividend_per_share``.
+    For each matching open position, the dividend amount = shares * dividend_per_share
+    is added to the ``dividends`` column.
+    """
+    norm = dividend_data.copy()
+    norm["symbol"] = norm["symbol"].str.upper()
+    norm["ex_date"] = pd.to_datetime(norm["ex_date"])
+    for index, row in output.loc[output["status"] == "open"].iterrows():
+        symbol = str(row["symbol"]).upper()
+        match = norm.loc[
+            (norm["symbol"] == symbol)
+            & (norm["ex_date"] >= pd.Timestamp(row["fill_date"]))
+        ]
+        if match.empty:
+            continue
+        shares = float(row["shares"])
+        total_div = (match["dividend_per_share"] * shares).sum()
+        existing = float(row.get("dividends", 0.0))
+        if total_div > 0:
+            output.loc[index, "dividends"] = existing + total_div
 
 
 def summarize_paper_account(
@@ -556,6 +772,10 @@ def _base_order_row(
         "highest_close_since_entry": np.nan,
         "trailing_stop_activated": False,
         "skip_reason": skip_reason,
+        "requested_shares": 0.0,
+        "filled_shares": 0.0,
+        "borrow_cost": 0.0,
+        "dividends": 0.0,
     }
 
 
@@ -626,12 +846,16 @@ def _normalize_ledger(ledger: pd.DataFrame) -> pd.DataFrame:
     )
     for column in ("exit_reason", "exit_rule_version", "skip_reason"):
         output[column] = output[column].fillna("").astype(str)
+    for column in ("requested_shares", "filled_shares", "borrow_cost", "dividends"):
+        if column not in output:
+            output[column] = 0.0
+        output[column] = pd.to_numeric(output[column], errors="coerce").fillna(0.0)
     return output.loc[:, PAPER_LEDGER_COLUMNS]
 
 
 def _dedupe_active_orders(ledger: pd.DataFrame) -> pd.DataFrame:
     output = ledger.copy()
-    active = output.loc[output["status"].isin(["planned", "open"])].sort_values(
+    active = output.loc[output["status"].isin(["planned", "filling", "open"])].sort_values(
         ["planned_date", "fill_date", "order_id"],
         na_position="last",
     )
@@ -671,6 +895,10 @@ def _skip_order_in_place(ledger: pd.DataFrame, index: int, *, reason: str) -> No
             "highest_close_since_entry",
             "trailing_stop_activated",
             "skip_reason",
+            "requested_shares",
+            "filled_shares",
+            "borrow_cost",
+            "dividends",
         ],
     ] = [
         "skipped",
@@ -695,11 +923,15 @@ def _skip_order_in_place(ledger: pd.DataFrame, index: int, *, reason: str) -> No
         np.nan,
         False,
         reason,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
     ]
 
 
 def _current_cash(ledger: pd.DataFrame, *, initial_capital: float) -> float:
-    filled = ledger.loc[ledger["status"].isin(["open", "closed"])]
+    filled = ledger.loc[ledger["status"].isin(["open", "closed", "filling"])]
     closed = ledger.loc[ledger["status"] == "closed"]
     committed_cash = (
         filled["entry_value"].fillna(0.0).sum() + filled["entry_cost"].fillna(0.0).sum()
