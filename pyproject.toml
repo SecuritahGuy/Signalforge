@@ -1,0 +1,37 @@
+[project]
+name = "signalforge"
+version = "0.1.0"
+description = "Leakage-aware stock ML research, forecasting, risk, and backtesting toolkit."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "scikit-learn>=1.4",
+]
+
+[project.optional-dependencies]
+data = [
+  "yfinance>=0.2.66",
+]
+apple = [
+  "mlx>=0.31.2",
+]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.4",
+]
+modeling = [
+  "lightgbm>=4.3",
+  "xgboost>=2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,25 @@
+universe:
+  name: "us_equities_research"
+  reference_path: "data/reference/tracked_universe.csv"
+  benchmark_symbol: "SPY"
+  min_price: 5.0
+  min_average_dollar_volume: 10000000
+
+labels:
+  horizons: [5, 20]
+  target: "forward_excess_return"
+
+validation:
+  first_train_start: "2015-01-01"
+  first_validation_start: "2020-01-01"
+  validation_months: 12
+  purge_days: 20
+  embargo_days: 5
+
+backtest:
+  rebalance_frequency: "D"
+  long_fraction: 0.1
+  short_fraction: 0.1
+  max_position_weight: 0.02
+  transaction_cost_bps: 5.0
+  slippage_bps: 5.0

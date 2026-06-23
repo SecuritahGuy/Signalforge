@@ -1,0 +1,114 @@
+symbol,name,category,sector,industry,notes
+AAPL,Apple,mega_cap_tech,Information Technology,Consumer Electronics,Core platform and hardware bellwether
+MSFT,Microsoft,mega_cap_tech,Information Technology,Software,Cloud and enterprise software leader
+NVDA,NVIDIA,mega_cap_tech,Information Technology,Semiconductors,AI infrastructure leader
+AVGO,Broadcom,large_cap_tech,Information Technology,Semiconductors,AI and networking semiconductor exposure
+AMD,Advanced Micro Devices,large_cap_tech,Information Technology,Semiconductors,AI and CPU/GPU cycle exposure
+ORCL,Oracle,large_cap_tech,Information Technology,Software,Enterprise software and cloud infrastructure
+CRM,Salesforce,large_cap_tech,Information Technology,Software,Enterprise SaaS demand signal
+ADBE,Adobe,large_cap_tech,Information Technology,Software,Creative and document software exposure
+NOW,ServiceNow,large_cap_tech,Information Technology,Software,Enterprise workflow SaaS
+INTU,Intuit,large_cap_tech,Information Technology,Software,Small business and tax software
+QCOM,Qualcomm,large_cap_tech,Information Technology,Semiconductors,Mobile and edge semiconductor cycle
+TXN,Texas Instruments,large_cap_tech,Information Technology,Semiconductors,Analog semiconductor cycle
+AMAT,Applied Materials,large_cap_tech,Information Technology,Semiconductor Equipment,Semiconductor capital equipment
+MU,Micron,large_cap_tech,Information Technology,Semiconductors,Memory cycle exposure
+PLTR,Palantir,fun_growth,Information Technology,Software,AI software momentum name
+GOOGL,Alphabet,mega_cap_communications,Communication Services,Internet Content & Information,Search ads and AI platform exposure
+META,Meta Platforms,mega_cap_communications,Communication Services,Social Media,Ads platform with AI capex sensitivity
+NFLX,Netflix,large_cap_communications,Communication Services,Entertainment,Streaming demand and media margin signal
+DIS,Disney,fun_consumer,Communication Services,Entertainment,Streaming parks and media turnaround
+CMCSA,Comcast,large_cap_communications,Communication Services,Telecom Services,Cable media and broadband exposure
+TMUS,T-Mobile US,large_cap_communications,Communication Services,Telecom Services,Wireless carrier growth exposure
+VZ,Verizon,large_cap_communications,Communication Services,Telecom Services,Defensive telecom and yield proxy
+T,AT&T,large_cap_communications,Communication Services,Telecom Services,Defensive telecom and yield proxy
+AMZN,Amazon,mega_cap_consumer_discretionary,Consumer Discretionary,Internet Retail,Cloud plus retail and logistics
+TSLA,Tesla,mega_cap_consumer_discretionary,Consumer Discretionary,Auto Manufacturers,High-volatility EV and autonomy exposure
+HD,Home Depot,large_cap_consumer_discretionary,Consumer Discretionary,Home Improvement Retail,Housing and home improvement demand
+LOW,Lowe's,large_cap_consumer_discretionary,Consumer Discretionary,Home Improvement Retail,Housing and renovation demand
+MCD,McDonald's,large_cap_consumer_discretionary,Consumer Discretionary,Restaurants,Global restaurant defensiveness
+SBUX,Starbucks,fun_consumer,Consumer Discretionary,Restaurants,Brand turnaround and consumer discretionary read
+NKE,Nike,fun_consumer,Consumer Discretionary,Footwear & Accessories,Brand and global consumer demand signal
+BKNG,Booking Holdings,large_cap_consumer_discretionary,Consumer Discretionary,Travel Services,Travel demand signal
+RIVN,Rivian,fun_growth,Consumer Discretionary,Auto Manufacturers,Speculative EV exposure
+F,Ford,large_cap_consumer_discretionary,Consumer Discretionary,Auto Manufacturers,Cyclical auto exposure
+GM,General Motors,large_cap_consumer_discretionary,Consumer Discretionary,Auto Manufacturers,Cyclical auto exposure
+COST,Costco,large_cap_consumer_staples,Consumer Staples,Discount Stores,Quality compounder and consumer health signal
+WMT,Walmart,large_cap_consumer_staples,Consumer Staples,Discount Stores,Defensive consumer and retail volume
+PG,Procter & Gamble,large_cap_consumer_staples,Consumer Staples,Household & Personal Products,Defensive staple quality
+KO,Coca-Cola,large_cap_consumer_staples,Consumer Staples,Beverages,Defensive beverage demand
+PEP,PepsiCo,large_cap_consumer_staples,Consumer Staples,Beverages,Defensive beverage and snack demand
+PM,Philip Morris,large_cap_consumer_staples,Consumer Staples,Tobacco,Defensive cash-flow staple
+MO,Altria,large_cap_consumer_staples,Consumer Staples,Tobacco,High-yield defensive staple
+TGT,Target,large_cap_consumer_staples,Consumer Staples,Discount Stores,Retail cycle and consumer health signal
+JPM,JPMorgan Chase,large_cap_financials,Financials,Banks,Money-center bank and credit cycle
+BAC,Bank of America,large_cap_financials,Financials,Banks,Rate and credit cycle exposure
+WFC,Wells Fargo,large_cap_financials,Financials,Banks,Rate and credit cycle exposure
+GS,Goldman Sachs,large_cap_financials,Financials,Capital Markets,Investment banking and trading cycle
+MS,Morgan Stanley,large_cap_financials,Financials,Capital Markets,Wealth and capital markets exposure
+BLK,BlackRock,large_cap_financials,Financials,Asset Management,Asset-management risk appetite proxy
+AXP,American Express,large_cap_financials,Financials,Credit Services,Premium consumer and credit exposure
+V,Visa,large_cap_financials,Financials,Credit Services,Payments volume quality compounder
+MA,Mastercard,large_cap_financials,Financials,Credit Services,Payments volume quality compounder
+BRK-B,Berkshire Hathaway,large_cap_financials,Financials,Insurance,Diversified financial and quality benchmark
+UNH,UnitedHealth Group,large_cap_healthcare,Health Care,Healthcare Plans,Managed care and healthcare defensiveness
+LLY,Eli Lilly,large_cap_healthcare,Health Care,Drug Manufacturers,GLP-1 and pharma growth exposure
+JNJ,Johnson & Johnson,large_cap_healthcare,Health Care,Drug Manufacturers,Diversified healthcare defensiveness
+MRK,Merck,large_cap_healthcare,Health Care,Drug Manufacturers,Large pharma exposure
+ABBV,AbbVie,large_cap_healthcare,Health Care,Drug Manufacturers,Large pharma cash-flow exposure
+PFE,Pfizer,large_cap_healthcare,Health Care,Drug Manufacturers,Large pharma turnaround exposure
+TMO,Thermo Fisher Scientific,large_cap_healthcare,Health Care,Diagnostics & Research,Life-sciences tools cycle
+ABT,Abbott Laboratories,large_cap_healthcare,Health Care,Medical Devices,Medical devices and diagnostics
+ISRG,Intuitive Surgical,large_cap_healthcare,Health Care,Medical Devices,Surgical robotics growth exposure
+GEHC,GE HealthCare,large_cap_healthcare,Health Care,Medical Devices,Medical imaging and healthcare equipment
+XOM,Exxon Mobil,large_cap_energy,Energy,Oil & Gas Integrated,Oil major and energy cycle
+CVX,Chevron,large_cap_energy,Energy,Oil & Gas Integrated,Oil major and energy cycle
+COP,ConocoPhillips,large_cap_energy,Energy,Oil & Gas E&P,Upstream energy exposure
+SLB,Schlumberger,large_cap_energy,Energy,Oil & Gas Services,Oilfield services cycle
+EOG,EOG Resources,large_cap_energy,Energy,Oil & Gas E&P,US shale upstream exposure
+MPC,Marathon Petroleum,large_cap_energy,Energy,Oil & Gas Refining,Refining margin exposure
+PSX,Phillips 66,large_cap_energy,Energy,Oil & Gas Refining,Refining and midstream exposure
+NEE,NextEra Energy,large_cap_utilities,Utilities,Utilities - Regulated Electric,Renewables and regulated utility exposure
+DUK,Duke Energy,large_cap_utilities,Utilities,Utilities - Regulated Electric,Defensive regulated utility
+SO,Southern Company,large_cap_utilities,Utilities,Utilities - Regulated Electric,Defensive regulated utility
+AEP,American Electric Power,large_cap_utilities,Utilities,Utilities - Regulated Electric,Defensive regulated utility
+EXC,Exelon,large_cap_utilities,Utilities,Utilities - Regulated Electric,Regulated utility exposure
+CAT,Caterpillar,large_cap_industrials,Industrials,Farm & Heavy Construction Machinery,Global industrial cycle
+DE,Deere,large_cap_industrials,Industrials,Farm & Heavy Construction Machinery,Agriculture equipment cycle
+GE,GE Aerospace,large_cap_industrials,Industrials,Aerospace & Defense,Aerospace cycle exposure
+HON,Honeywell,large_cap_industrials,Industrials,Conglomerates,Diversified industrial exposure
+UPS,United Parcel Service,large_cap_industrials,Industrials,Integrated Freight & Logistics,Shipping and logistics cycle
+RTX,RTX,large_cap_industrials,Industrials,Aerospace & Defense,Defense and aerospace exposure
+LMT,Lockheed Martin,large_cap_industrials,Industrials,Aerospace & Defense,Defense exposure
+BA,Boeing,large_cap_industrials,Industrials,Aerospace & Defense,Aerospace turnaround and cyclicality
+UNP,Union Pacific,large_cap_industrials,Industrials,Railroads,Freight rail economic signal
+LIN,Linde,large_cap_materials,Materials,Specialty Chemicals,Industrial gases quality exposure
+SHW,Sherwin-Williams,large_cap_materials,Materials,Specialty Chemicals,Housing and coatings demand
+APD,Air Products and Chemicals,large_cap_materials,Materials,Specialty Chemicals,Industrial gas exposure
+FCX,Freeport-McMoRan,large_cap_materials,Materials,Copper,Copper and global growth exposure
+NEM,Newmont,large_cap_materials,Materials,Gold,Gold miner and real-rate sensitivity
+DOW,Dow,large_cap_materials,Materials,Chemicals,Chemical cycle exposure
+PLD,Prologis,large_cap_real_estate,Real Estate,REIT - Industrial,Industrial real estate and logistics
+AMT,American Tower,large_cap_real_estate,Real Estate,REIT - Specialty,Wireless tower REIT exposure
+EQIX,Equinix,large_cap_real_estate,Real Estate,REIT - Specialty,Data center REIT exposure
+O,Realty Income,large_cap_real_estate,Real Estate,REIT - Retail,Net lease and rate sensitivity
+SPG,Simon Property Group,large_cap_real_estate,Real Estate,REIT - Retail,Retail mall REIT exposure
+SPY,SPDR S&P 500 ETF,benchmark,ETF,Broad Market,Default excess-return benchmark
+WDC,Western Digital,promoted_discovery,Information Technology,"Technology Hardware, Storage & Peripherals","Promoted from symbol discovery monitoring; score=79.76; lanes=momentum_breakouts, sector_leaders, value_recoveries, volume_anomalies"
+STX,Seagate Technology,promoted_discovery,Information Technology,"Technology Hardware, Storage & Peripherals","Promoted from symbol discovery monitoring; score=78.68; lanes=momentum_breakouts, sector_leaders, value_recoveries, volume_anomalies"
+KLAC,KLA Corporation,promoted_discovery,Information Technology,Semiconductor Materials & Equipment,"Promoted from symbol discovery monitoring; score=78.08; lanes=momentum_breakouts, sector_leaders, value_recoveries"
+LRCX,Lam Research,promoted_discovery,Information Technology,Semiconductor Materials & Equipment,"Promoted from symbol discovery monitoring; score=77.05; lanes=momentum_breakouts, sector_leaders, value_recoveries"
+SNDK,Sandisk,promoted_discovery,Information Technology,"Technology Hardware, Storage & Peripherals","Promoted from symbol discovery monitoring; score=75.67; lanes=momentum_breakouts, sector_leaders, value_recoveries"
+HOOD,Robinhood Markets,promoted_discovery,Financials,Investment Banking & Brokerage,"Promoted from symbol discovery monitoring; score=77.10; lanes=momentum_breakouts, sector_leaders, value_recoveries, volume_anomalies"
+WSM,"Williams-Sonoma, Inc.",promoted_discovery,Consumer Discretionary,Homefurnishing Retail,"Promoted from symbol discovery monitoring; score=75.94; lanes=momentum_breakouts, sector_leaders, value_recoveries, volume_anomalies"
+MRNA,Moderna,promoted_discovery,Health Care,Biotechnology,"Promoted from symbol discovery monitoring; score=75.76; lanes=momentum_breakouts, value_recoveries, volume_anomalies"
+DELL,Dell Technologies,promoted_discovery,Information Technology,"Technology Hardware, Storage & Peripherals","Promoted from symbol discovery monitoring; score=74.16; lanes=momentum_breakouts, sector_leaders, value_recoveries"
+SWK,Stanley Black & Decker,promoted_discovery,Industrials,Industrial Machinery & Supplies & Components,"Promoted from symbol discovery monitoring; score=71.93; lanes=momentum_breakouts, value_recoveries, volume_anomalies"
+NUE,Nucor,promoted_discovery,Materials,Steel,"Promoted from symbol discovery monitoring; score=71.64; lanes=momentum_breakouts, sector_leaders, volume_anomalies"
+FTNT,Fortinet,promoted_discovery,Information Technology,Systems Software,"Promoted from symbol discovery monitoring; score=71.47; lanes=momentum_breakouts, sector_leaders, value_recoveries, volume_anomalies"
+JBL,Jabil,promoted_discovery,Information Technology,Electronic Manufacturing Services,"Promoted from symbol discovery monitoring; score=71.43; lanes=sector_leaders, value_recoveries, volume_anomalies"
+IBKR,Interactive Brokers,promoted_discovery,Financials,Investment Banking & Brokerage,"Promoted from symbol discovery monitoring; score=70.53; lanes=momentum_breakouts, sector_leaders"
+GPC,Genuine Parts Company,promoted_discovery,Consumer Discretionary,Distributors,"Promoted from symbol discovery monitoring; score=70.48; lanes=value_recoveries, volume_anomalies"
+HPE,Hewlett Packard Enterprise,promoted_discovery,Information Technology,"Technology Hardware, Storage & Peripherals","Promoted from symbol discovery monitoring; score=70.80; lanes=momentum_breakouts, sector_leaders, value_recoveries"
+STT,State Street Corporation,promoted_discovery,Financials,Asset Management & Custody Banks,"Promoted from symbol discovery monitoring; score=70.41; lanes=momentum_breakouts, sector_leaders"
+STLD,Steel Dynamics,promoted_discovery,Materials,Steel,"Promoted from symbol discovery monitoring; score=70.02; lanes=momentum_breakouts, sector_leaders"

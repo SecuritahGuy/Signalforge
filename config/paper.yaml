@@ -1,0 +1,22 @@
+exit_rules:
+  horizon_days: 20
+
+  stop_loss:
+    enabled: true
+    pct: -0.08
+
+  trailing_stop:
+    enabled: true
+    activate_at_return: 0.12
+    trail_from_high_pct: -0.06
+
+  score_deterioration:
+    enabled: true
+    min_days_held: 5
+    exit_below_score: 0.005
+    exit_if_score_declines_pct: 0.60
+
+  rebalance:
+    enabled: false
+    min_days_held: 10
+    exit_below_score: 0.01

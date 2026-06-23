@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "dashboard": "npm --prefix web run dev -- --host 127.0.0.1",
+    "dashboard:sync": "node web/scripts/sync-data.mjs",
+    "dashboard:build": "npm --prefix web run build"
+  }
+}

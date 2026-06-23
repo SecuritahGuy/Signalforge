@@ -1,0 +1,47 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+node_modules/
+web/public/data/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Archives
+*.zip
+
+# Generated market data and derived research frames. Keep these reproducible
+# from scripts rather than committing large CSV artifacts.
+data/raw/*.csv
+data/raw/*
+data/interim/*.csv
+data/interim/*
+data/processed/*.csv
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# Source/reference inputs should stay commit-friendly. The hand-curated tracked
+# universe is intentionally not ignored; generated broad universes are.
+data/reference/sp500_universe.csv
+
+models/
+
+# Generated paper trading artifacts.
+data/paper/
+
+# Generated reports and analysis exports.
+reports/*.csv
+reports/**/*.csv
+reports/
+*.parquet
+*.sqlite
+*.db
